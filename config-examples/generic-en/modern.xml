@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<zimletConfig name="org_zimbracommunity_phishing_reporter_modern" version="2.0.0">
+    <global>
+        <property name="internalReportAddress">phishing@example.org</property>
+        <property name="simulationReportAddress"></property>
+        <property name="moveReportedMessage">true</property>
+        <property name="targetFolderId">4</property>
+        <property name="simulationDetectionEnabled">false</property>
+        <property name="simulationDisclaimerHeader">X-Disclaimer</property>
+        <property name="simulationDisclaimerRules"></property>
+        <property name="simulationDkimDomains"></property>
+        <property name="simulationSourceIndicators"></property>
+        <property name="buttonLabel">Report phishing</property>
+        <property name="buttonTooltip">Report suspicious email</property>
+        <property name="busyMessage">The previous report is still being processed.</property>
+        <property name="selectOneMessageMessage">Open or select exactly one email.</property>
+        <property name="missingMessageIdMessage">The message ID could not be determined.</property>
+        <property name="noSubjectText">(no subject)</property>
+        <property name="internalSubjectPrefix">Suspicious email reported: </property>
+        <property name="simulationSubjectPrefix">Phishing simulation reported: </property>
+        <property name="internalSuccessMessage">The suspicious email was forwarded for review.</property>
+        <property name="simulationSuccessMessage">Good catch! This email was part of a phishing simulation and was reported correctly.</property>
+        <property name="sendErrorMessage">The email could not be reported and was not moved.</property>
+        <property name="moveErrorMessage">The email was reported but could not be moved.</property>
+        <property name="configurationErrorInternalAddress">No internal report address is configured.</property>
+        <property name="configurationErrorSimulationAddress">Simulation detection matched, but no simulation report address is configured.</property>
+    </global>
+</zimletConfig>

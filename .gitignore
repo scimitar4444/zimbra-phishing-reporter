@@ -1,0 +1,6 @@
+*.local.xml
+*.eml
+*.msg
+.env
+.DS_Store
+node_modules/

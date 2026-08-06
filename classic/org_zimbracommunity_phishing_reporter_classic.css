@@ -1,0 +1,13 @@
+/* Zimbra Phishing Reporter icon for the Classic UI */
+.ImgZimbraPhishingReporter,
+.ImgZimbraPhishingReporter_16,
+.ImgZimbraPhishingReporter_24 {
+    background-image: url("shield-alert-16.png") !important;
+    background-repeat: no-repeat !important;
+    background-position: center center !important;
+    background-size: 16px 16px !important;
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px !important;
+    min-height: 16px !important;
+}

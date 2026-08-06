@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<zimlet name="org_zimbracommunity_phishing_reporter_classic" version="2.0.0"
+        description="Reports suspicious emails as attached RFC822 messages and optionally recognizes phishing simulations"
+        label="Zimbra Phishing Reporter (Classic)"
+        target="main">
+    <includeCSS>org_zimbracommunity_phishing_reporter_classic.css</includeCSS>
+    <include>org_zimbracommunity_phishing_reporter_classic.js</include>
+    <resource>shield-alert-16.png</resource>
+    <handlerObject>org_zimbracommunity_phishing_reporter_classic_HandlerObject</handlerObject>
+</zimlet>
