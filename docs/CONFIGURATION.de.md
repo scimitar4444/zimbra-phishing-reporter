@@ -53,3 +53,14 @@ zmprov fc -a zimlet
 ```
 
 Danach Zimbra neu laden oder ab- und wieder anmelden.
+
+
+## Zeichencodierung
+
+Für deutsche Texte verwenden die mitgelieferten XML-Konfigurationen
+ASCII-sichere XML-Zeichenreferenzen. Dadurch bleiben Umlaute auch dann korrekt,
+wenn `zmzimletctl configure` unter einer nicht UTF-8-fähigen Java- oder
+System-Locale ausgeführt wird.
+
+In `.properties`-Dateien werden deutsche Sonderzeichen als Java-Unicode-Escapes
+gespeichert.

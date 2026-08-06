@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Modern UI - Version 2.0.0 */
+/* Zimbra Phishing Reporter - Modern UI - Version 2.0.1 */
 (function () {
     "use strict";
 

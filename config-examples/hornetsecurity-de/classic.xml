@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<zimletConfig name="org_zimbracommunity_phishing_reporter_classic" version="2.0.0">
+<zimletConfig name="org_zimbracommunity_phishing_reporter_classic" version="2.0.1">
     <global>
         <property name="internalReportAddress">phishing@example.org</property>
         <property name="simulationReportAddress">reportto@hornetsecurity.com</property>
@@ -11,18 +11,18 @@
         <property name="simulationDkimDomains">sas.cloud-security.net</property>
         <property name="simulationSourceIndicators">94.100.136.58,94.100.132.73,awareness-mta.hornetsecurity.com</property>
         <property name="buttonLabel">Phishing melden</property>
-        <property name="buttonTooltip">Verdächtige E-Mail melden</property>
+        <property name="buttonTooltip">Verd&#x00E4;chtige E-Mail melden</property>
         <property name="busyMessage">Die vorherige Meldung wird noch verarbeitet.</property>
-        <property name="selectOneMessageMessage">Bitte öffnen oder markieren Sie genau eine E-Mail.</property>
+        <property name="selectOneMessageMessage">Bitte &#x00F6;ffnen oder markieren Sie genau eine E-Mail.</property>
         <property name="missingMessageIdMessage">Die Nachrichten-ID konnte nicht ermittelt werden.</property>
         <property name="noSubjectText">(ohne Betreff)</property>
-        <property name="internalSubjectPrefix">Verdächtige E-Mail gemeldet: </property>
+        <property name="internalSubjectPrefix">Verd&#x00E4;chtige E-Mail gemeldet: </property>
         <property name="simulationSubjectPrefix">Phishing-Simulation gemeldet: </property>
-        <property name="internalSuccessMessage">Die verdächtige E-Mail wurde zur Prüfung weitergeleitet. Eine Rückmeldung erfolgt nicht automatisch.</property>
+        <property name="internalSuccessMessage">Die verd&#x00E4;chtige E-Mail wurde zur Pr&#x00FC;fung weitergeleitet. Eine R&#x00FC;ckmeldung erfolgt nicht automatisch.</property>
         <property name="simulationSuccessMessage">Sehr gut erkannt! Diese E-Mail war Teil einer Phishing-Simulation und wurde korrekt gemeldet.</property>
         <property name="sendErrorMessage">Die E-Mail konnte nicht gemeldet werden und wurde nicht verschoben.</property>
         <property name="moveErrorMessage">Die E-Mail wurde gemeldet, konnte aber nicht in den Zielordner verschoben werden.</property>
         <property name="configurationErrorInternalAddress">Es ist keine interne Meldeadresse konfiguriert.</property>
-        <property name="configurationErrorSimulationAddress">Die Simulation wurde erkannt, aber es ist keine Meldeadresse für Simulationen konfiguriert.</property>
+        <property name="configurationErrorSimulationAddress">Die Simulation wurde erkannt, aber es ist keine Meldeadresse f&#x00FC;r Simulationen konfiguriert.</property>
     </global>
 </zimletConfig>

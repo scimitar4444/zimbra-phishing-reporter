@@ -53,3 +53,12 @@ zmprov fc -a zimlet
 ```
 
 Users may need to reload the web client or sign out and back in.
+
+
+## Character encoding
+
+The supplied German XML profiles use ASCII-safe XML character references.
+This prevents corrupted umlauts when `zmzimletctl configure` runs with a Java
+or system locale that does not decode UTF-8 correctly.
+
+German `.properties` files use Java Unicode escapes.

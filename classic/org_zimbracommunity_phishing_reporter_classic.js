@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Classic UI - Version 2.0.0 */
+/* Zimbra Phishing Reporter - Classic UI - Version 2.0.1 */
 
 function org_zimbracommunity_phishing_reporter_classic_HandlerObject() {
     this._busy = false;
