@@ -1,41 +1,54 @@
 # Veröffentlichung auf GitHub
 
-## 1. Repository anlegen
+## Voraussetzungen
 
-Auf GitHub ein neues leeres Repository mit dem Namen `zimbra-phishing-reporter` erstellen. Beim Anlegen keine zusätzliche README, Lizenz oder `.gitignore` erzeugen, da diese Dateien bereits vorhanden sind.
-
-## 2. Projekt hochladen
-
-Im entpackten Projektordner:
+Vor einer Veröffentlichung:
 
 ```bash
-git init -b main
-git add .
-git commit -m "Initial release 2.0.0"
-git remote add origin https://github.com/DEIN-BENUTZERNAME/zimbra-phishing-reporter.git
-git push -u origin main
+node tests/detection-test.js
+node tests/smoke-test.js
 ```
 
-Alternativ mit GitHub CLI:
+Zusätzlich prüfen:
 
 ```bash
-git init -b main
-git add .
-git commit -m "Initial release 2.0.0"
-gh repo create zimbra-phishing-reporter --public --source=. --remote=origin --push
+cd dist
+sha256sum -c SHA256SUMS
+unzip -t org_zimbracommunity_phishing_reporter_classic.zip
+unzip -t org_zimbracommunity_phishing_reporter_modern.zip
 ```
 
-## 3. Release veröffentlichen
+Es dürfen keine Passwörter, Token, privaten Mail-Exporte, internen Produktivadressen oder vertraulichen Protokolle enthalten sein.
+
+## Branch und Pull Request
+
+Änderungen zunächst auf einem separaten Branch veröffentlichen und über einen Pull Request prüfen. Ein Versionsrelease sollte erst nach einem End-to-End-Test in Classic und Modern erstellt werden.
+
+## Version aktualisieren
+
+Vor dem Tag müssen dieselbe Versionsnummer tragen:
+
+- `classic/org_zimbracommunity_phishing_reporter_classic.xml`
+- `modern/org_zimbracommunity_phishing_reporter_modern.xml`
+- `classic/config_template.xml`
+- `modern/config_template.xml`
+- alle XML-Dateien unter `config-examples/`
+- Versionskommentare in den beiden JavaScript-Dateien
+- `CHANGELOG.md`
+
+## Release erzeugen
+
+Beispiel für Version 2.1.0:
 
 ```bash
-git tag -a v2.0.0 -m "Zimbra Phishing Reporter 2.0.0"
-git push origin v2.0.0
+git tag -a v2.1.0 -m "Zimbra Phishing Reporter 2.1.0"
+git push origin v2.1.0
 ```
 
-Danach auf GitHub unter **Releases → Draft a new release** den Tag `v2.0.0` auswählen und diese Dateien aus `dist/` anhängen:
+Im GitHub-Release werden diese erzeugten Dateien aus `dist/` veröffentlicht:
 
 - `org_zimbracommunity_phishing_reporter_classic.zip`
 - `org_zimbracommunity_phishing_reporter_modern.zip`
 - `SHA256SUMS`
 
-Vor dem Push prüfen, dass keine internen Adressen, Kennwörter, Mail-Exporte oder andere vertrauliche Daten enthalten sind.
+Die Release-Dateien müssen aus genau dem getaggten Commit gebaut werden.

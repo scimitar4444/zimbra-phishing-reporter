@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<zimletConfig name="org_zimbracommunity_phishing_reporter_classic" version="2.0.1">
+<zimletConfig name="org_zimbracommunity_phishing_reporter_classic" version="2.1.0">
     <global>
         <property name="internalReportAddress">phishing@example.org</property>
         <property name="simulationReportAddress"></property>
@@ -10,10 +10,13 @@
         <property name="simulationDisclaimerRules"></property>
         <property name="simulationDkimDomains"></property>
         <property name="simulationSourceIndicators"></property>
+        <property name="classificationTimeoutMs">12000</property>
+        <property name="debugLogging">false</property>
         <property name="buttonLabel">Report phishing</property>
         <property name="buttonTooltip">Report suspicious email</property>
         <property name="busyMessage">The previous report is still being processed.</property>
-        <property name="selectOneMessageMessage">Open or select exactly one email.</property>
+        <property name="selectOneMessageMessage">Open the suspicious email individually and try again.</property>
+        <property name="alreadyReportedMessage">This email has already been reported in this session.</property>
         <property name="missingMessageIdMessage">The message ID could not be determined.</property>
         <property name="noSubjectText">(no subject)</property>
         <property name="internalSubjectPrefix">Suspicious email reported: </property>
@@ -24,5 +27,7 @@
         <property name="moveErrorMessage">The email was reported but could not be moved.</property>
         <property name="configurationErrorInternalAddress">No internal report address is configured.</property>
         <property name="configurationErrorSimulationAddress">Simulation detection matched, but no simulation report address is configured.</property>
+        <property name="configurationErrorInvalidAddress">The configured report address is invalid.</property>
+        <property name="errorReferenceLabel">Reference</property>
     </global>
 </zimletConfig>

@@ -8,6 +8,7 @@ const childProcess = require("child_process");
 const root = path.resolve(__dirname, "..");
 const classicId = "org_zimbracommunity_phishing_reporter_classic";
 const modernId = "org_zimbracommunity_phishing_reporter_modern";
+const expectedVersion = "2.1.0";
 
 function run(command, args) {
   childProcess.execFileSync(command, args, { stdio: "inherit", cwd: root });
@@ -37,6 +38,18 @@ for (const file of [
   }
 }
 
+for (const file of [
+  path.join(root, "classic", classicId + ".xml"),
+  path.join(root, "modern", modernId + ".xml"),
+  path.join(root, "classic", "config_template.xml"),
+  path.join(root, "modern", "config_template.xml")
+]) {
+  const text = fs.readFileSync(file, "utf8");
+  if (!text.includes(`version="${expectedVersion}"`)) {
+    throw new Error(`Version ${expectedVersion} missing in ${file}`);
+  }
+}
+
 for (const [zipName, required] of [
   [classicId + ".zip", [classicId + ".xml", classicId + ".js", "config_template.xml"]],
   [modernId + ".zip", [modernId + ".xml", "index.js", "config_template.xml"]]
@@ -47,6 +60,11 @@ for (const [zipName, required] of [
       throw new Error(`Missing ${entry} in ${zipName}`);
     }
   }
+}
+
+const sums = fs.readFileSync(path.join(root, "dist", "SHA256SUMS"), "utf8");
+if (!sums.includes(classicId + ".zip") || !sums.includes(modernId + ".zip")) {
+  throw new Error("SHA256SUMS does not list both packages");
 }
 
 console.log("Smoke tests passed.");

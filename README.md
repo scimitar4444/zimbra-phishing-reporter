@@ -1,75 +1,84 @@
 # Zimbra Phishing Reporter
 
-A configurable one-click phishing reporting Zimlet for the Zimbra Classic and Modern web clients.
+A configurable Zimlet for reporting suspicious email from the Zimbra Classic and Modern web clients.
 
-Users can report suspicious emails without manually forwarding them as attachments.
+The complete original message is submitted as an RFC822/EML attachment. Users do not need to forward the message manually as an attachment.
 
 ## Features
 
-- Support for Zimbra Classic and Modern UI
-- One-click reporting of suspicious emails
-- Forwarding of the complete original email as an RFC822/EML attachment
-- Configurable internal review mailbox
-- Optional phishing-simulation detection
-- Separate routing for recognized simulations
-- Optional Hornetsecurity Security Awareness Service profile
-- Configurable notification texts
-- Optional move to the Spam folder after successful reporting
-- Non-blocking success notifications
-- Error dialogs when reporting fails
-- German and English configuration examples
+- support for Zimbra Classic and Modern
+- direct toolbar button in Classic
+- **Report phishing** entry in the Modern **More** menu
+- complete original message forwarded as an RFC822/EML attachment
+- configurable internal review mailbox
+- optional detection and separate routing of phishing simulations
+- optional Hornetsecurity example profile
+- original message moved only after the report has been accepted
+- duplicate-report protection for the current browser session
+- configurable notifications, errors and subject prefixes
+- stable support references without exposing internal server details
+- automated runtime, detection, package and syntax checks
+
+## Classic and Modern placement
+
+Classic provides a direct action in the message toolbar.
+
+Modern intentionally provides the action under **More → Report phishing**. A direct Modern toolbar button was tested in the target environment but could not be integrated reliably. The Modern package therefore uses only the working action-menu extension point; direct toolbar integration is not an outstanding implementation item.
+
+## Unambiguous message selection
+
+The Zimlet reports only an unambiguously identified individual message. It never submits a conversation ID as a message ID.
+
+When a conversation contains multiple messages and Zimbra does not expose the active individual message unambiguously, the user is asked to open the suspicious email individually. This prevents the first or another arbitrary message in the thread from being transmitted.
 
 ## Reporting workflow
 
 ### Recognized phishing simulation
 
-When an email matches the configured simulation indicators:
+When an email matches the configured indicators:
 
-1. The original email is forwarded to the configured simulation reporting address.
-2. The user receives a success notification.
-3. The reported email is moved to the configured target folder.
-
-Example notification:
-
-> **Well spotted!**  
-> This email was part of a phishing simulation and was reported successfully.
+1. The original message is submitted to the configured simulation reporting address.
+2. After successful acceptance, the message is optionally moved to the target folder.
+3. The configured success notification is displayed.
 
 ### Other suspicious email
 
-When an email is not recognized as a simulation:
+When an email is not recognized as a simulation, or classification cannot be completed:
 
-1. The original email is forwarded only to the configured internal review mailbox.
-2. It is not automatically forwarded to an external provider.
-3. The user receives a notification.
-4. The reported email is moved to the configured target folder.
+1. The original message is submitted only to the internal review mailbox.
+2. It is not automatically submitted to the external simulation provider.
+3. After successful acceptance, it is optionally moved to the target folder.
+4. The configured success notification is displayed.
 
-Example notification:
+A classification failure therefore does not block internal reporting.
 
-> The suspicious email was forwarded to the internal review team.  
-> A response is not provided automatically.
+## Simulation detection without modifying email
 
-This separation helps prevent accidentally reported legitimate emails from being submitted automatically to an external provider.
+The Zimlet **only reads headers that already exist on the message**. It does not set, add or modify the message or its headers, and it does not require a Zimbra mail-flow change.
+
+Configured indicators are evaluated in this order:
+
+1. A configured rule matches the selected disclaimer header, such as `X-Disclaimer`.
+2. Or `dkim=pass` and the configured `header.d` domain occur in the same result clause of an `Authentication-Results` header.
+3. Or a matching `DKIM-Signature` occurs together with a configured indicator from `Received`.
+
+These conditions are OR-connected. The practical disclaimer-based recognition remains available, while the DKIM parser no longer combines a pass for an unrelated domain with a separate failed result for the simulation domain.
+
+When Zimbra does not return all requested free headers through SOAP, the Zimlet reads the authenticated RFC822 representation once. This fallback is used only when a header family required by the configured classifiers is missing. Total classification time is limited by `classificationTimeoutMs`.
+
+Because classification is performed in the client from existing headers, its reliability depends on the delivered headers and the local mail path. Example values must be validated against real simulation messages before rollout.
 
 ## Safe defaults
 
-The default packages contain:
+The default packages intentionally contain:
 
 - no internal reporting address
 - no simulation reporting address
-- no organization-specific data
+- no organization-specific production data
 - disabled simulation detection
+- disabled debug logging
 
-The Zimlets must be configured before productive use.
-
-## Downloads
-
-Ready-to-deploy packages are available under **GitHub Releases**.
-
-Packages:
-
-- `org_zimbracommunity_phishing_reporter_classic.zip`
-- `org_zimbracommunity_phishing_reporter_modern.zip`
-- `SHA256SUMS`
+A configuration profile must be applied before production use.
 
 ## Installation
 
@@ -80,7 +89,7 @@ zmzimletctl deploy /path/to/org_zimbracommunity_phishing_reporter_classic.zip
 zmzimletctl deploy /path/to/org_zimbracommunity_phishing_reporter_modern.zip
 ```
 
-Apply a configuration profile:
+Apply the matching configuration profiles:
 
 ```bash
 zmzimletctl configure /path/to/classic.xml
@@ -88,75 +97,57 @@ zmzimletctl configure /path/to/modern.xml
 zmprov fc -a zimlet
 ```
 
-Users may need to reload the Zimbra web client or sign out and back in.
+Users may need to reload the web client completely or sign out and back in.
 
-## Generic configuration
+## Example profiles
 
-Generic configuration examples are included in:
+Generic profiles are provided in:
 
 ```text
 config-examples/generic-de/
 config-examples/generic-en/
 ```
 
-Before applying a profile, replace the example address:
+Replace `phishing@example.org` with the organization's internal review mailbox.
 
-```text
-phishing@example.org
-```
-
-with the internal reporting mailbox used by your organization.
-
-## Hornetsecurity Security Awareness Service
-
-The repository includes an optional configuration example for phishing simulations generated by the Hornetsecurity Security Awareness Service:
+An optional Hornetsecurity profile is provided in:
 
 ```text
 config-examples/hornetsecurity-de/
 ```
 
-Recognized Hornetsecurity simulation emails can be forwarded as RFC822/EML attachments to:
-
-```text
-reportto@hornetsecurity.com
-```
-
-The reporting address and simulation indicators are configurable.
-
-The supplied example can use indicators such as:
-
-- dedicated email headers
-- DKIM domains
-- sending IP addresses
-- sender information
-
-Emails that are not recognized as simulations are sent only to the configured internal review mailbox. They are not automatically forwarded to Hornetsecurity.
-
-This prevents accidentally reported legitimate emails from being submitted automatically.
-
-Simulation detection is disabled by default.
-
-The supplied values are examples and must be checked before deployment. Vendor headers, sending addresses and infrastructure may change.
+It evaluates disclaimer, DKIM and transport headers already present on the message. It does not add anything to the email. Vendor values in the example must be verified against current test messages and the organization's own header chain.
 
 ## Error handling
 
-When reporting fails:
+The original message is moved only after Zimbra accepts the report message.
 
-- an error dialog is displayed
-- the original email remains in its current folder
-- the user can try again later
+- report submission failed: the original stays in its current folder
+- report accepted but move failed: the user receives reference `PR-MOVE-01`
+- report submission failed: the user receives reference `PR-SEND-01`
+- classification failed or timed out: the internal reporting route is used
 
-A message is moved only after forwarding has completed successfully.
+Technical server details are not displayed in user dialogs. Administrators may enable browser-console diagnostics with `debugLogging=true`. The implementation does not intentionally log message content.
 
-## Configuration documentation
+## Important configuration properties
 
-Detailed documentation is available in:
+| Property | Meaning |
+|---|---|
+| `internalReportAddress` | Exactly one internal reporting address. |
+| `simulationReportAddress` | Exactly one reporting address for recognized simulations. |
+| `moveReportedMessage` | Enable or disable moving after successful reporting. |
+| `targetFolderId` | Zimbra target-folder ID; `4` is commonly Spam/Junk and must be verified. |
+| `simulationDetectionEnabled` | Enable optional simulation detection. |
+| `simulationDisclaimerHeader` | Existing header evaluated by disclaimer rules. |
+| `simulationDisclaimerRules` | Semicolon-separated OR rules; markers inside a rule are AND-connected with `|`. |
+| `simulationDkimDomains` | Comma-separated DKIM domains. |
+| `simulationSourceIndicators` | Comma-separated `Received` indicators; effective only with a matching DKIM signature. |
+| `classificationTimeoutMs` | Maximum total classification duration, 12,000 ms by default. |
+| `debugLogging` | Optional technical browser-console output. |
 
-- `docs/CONFIGURATION.md`
-- `docs/CONFIGURATION.de.md`
-- `README.de.md`
+See `docs/CONFIGURATION.md` for the complete reference.
 
-## Build
+## Build and tests
 
 Requirements:
 
@@ -164,81 +155,45 @@ Requirements:
 - Node.js
 - ZIP command-line utility
 
-Build the installation packages:
+Build packages and checksums:
 
 ```bash
 ./scripts/build.sh
 ```
 
-Run the smoke test:
+Run all automated checks:
 
 ```bash
+node tests/detection-test.js
 node tests/smoke-test.js
 ```
 
-Generated packages are written to:
+Generated files are written to `dist/`:
 
-```text
-dist/
-```
+- `org_zimbracommunity_phishing_reporter_classic.zip`
+- `org_zimbracommunity_phishing_reporter_modern.zip`
+- `SHA256SUMS`
 
-## Compatibility
+## Compatibility and rollout
 
-The project was developed for Zimbra 10.x web clients.
+The project was developed for Zimbra 10.x web clients. Installations, themes, patch levels and Modern-client versions may differ.
 
-Zimbra installations, themes and patch levels may differ. Test both the Classic and Modern interfaces with a dedicated account before broad deployment.
+Before broad deployment, test at least:
+
+- an individual message in Classic
+- an individual message in Modern through **More**
+- a multi-message conversation followed by an individually opened message
+- a recognized simulation message
+- the normal internal reporting route
+- a message with a large attachment
+- accepted submission with an intentionally failing move operation
 
 ## Security and privacy
 
-The complete original email is forwarded as an RFC822/EML attachment.
+The complete original message is transmitted as an RFC822/EML attachment. It may contain personal data, confidential content, attachments, internal addresses, authentication headers and tracking identifiers.
 
-Reported emails may contain:
+Recipients, mailbox permissions, retention and deletion must follow the organization's policies. Passwords, tokens, private mail exports, internal production addresses and confidential logs must not be committed to the public repository.
 
-- personal data
-- confidential information
-- attachments
-- internal email addresses
-- authentication headers
-- tracking identifiers
+## License and disclaimer
 
-Reporting recipients, mailbox permissions, retention periods and deletion procedures should follow the security and privacy policies of the organization.
-
-Never commit the following information to a public repository:
-
-- passwords
-- API keys
-- access tokens
-- private email exports
-- internal production addresses
-- organization-specific configuration
-- confidential screenshots or logs
-
-## Contributing
-
-Bug reports and contributions are welcome.
-
-When reporting an issue, include:
-
-- Zimbra version
-- Classic or Modern interface
-- browser and browser version
-- relevant error message
-- steps to reproduce the problem
-
-Do not include private email content, authentication tokens or confidential configuration.
-
-See `CONTRIBUTING.md` for additional information.
-
-## License
-
-This project is licensed under the MIT License.
-
-See [LICENSE](LICENSE).
-
-## Disclaimer
-
-This is an independent community project.
-
-It is not affiliated with, sponsored by, supported by or endorsed by Zimbra, Synacor or Hornetsecurity.
-
-Zimbra and Hornetsecurity are trademarks of their respective owners.
+This project is licensed under the MIT License and is an independent community project. It is not affiliated with, sponsored by, supported by or endorsed by Zimbra, Synacor or Hornetsecurity. Zimbra and Hornetsecurity are trademarks of their respective owners.

@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Classic UI - Version 2.0.1 */
+/* Zimbra Phishing Reporter - Classic UI - Version 2.1.0 */
 
 function org_zimbracommunity_phishing_reporter_classic_HandlerObject() {
     this._busy = false;
@@ -7,6 +7,7 @@ function org_zimbracommunity_phishing_reporter_classic_HandlerObject() {
     this._pendingShouldMove = true;
     this._pendingTargetFolderId = "4";
     this._pendingSuccessMessage = "";
+    this._reportedMessageIds = {};
 }
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype = new ZmZimletBase();
@@ -95,7 +96,10 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._reportLis
 
     var message = this._getMessage(controller);
     if (!message) {
-        this._showError(this._getConfig("selectOneMessageMessage", "Open or select exactly one email."));
+        this._showError(this._getConfig(
+            "selectOneMessageMessage",
+            "Open the suspicious email individually and try again."
+        ));
         return;
     }
 
@@ -105,63 +109,165 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._reportLis
         return;
     }
 
+    messageId = String(messageId);
+    if (this._reportedMessageIds[messageId]) {
+        this._setStatus(this._getConfig("alreadyReportedMessage", "This email has already been reported in this session."));
+        return;
+    }
+
     this._busy = true;
     if (!this._getBooleanConfig("simulationDetectionEnabled", false)) {
         this._sendReport(message, false);
         return;
     }
 
-    this._loadClassificationHeaders(String(messageId), new AjxCallback(this, function(headerMap) {
-        this._sendReport(message, this._isSimulation(headerMap));
-    }), new AjxCallback(this, function() {
-        // If classification is unavailable, use the normal internal reporting route.
+    try {
+        this._loadClassificationHeaders(messageId, new AjxCallback(this, function(headerMap) {
+            var matchReason = this._getSimulationMatchReason(headerMap);
+            this._debug("Classification completed", matchReason || "internal route");
+            this._sendReport(message, !!matchReason);
+        }), new AjxCallback(this, function(error) {
+            this._logError("PR-CLASSIFY-01", error);
+            // Classification failures must never block the internal reporting route.
+            this._sendReport(message, false);
+            return true;
+        }));
+    } catch (classificationError) {
+        this._logError("PR-CLASSIFY-02", classificationError);
         this._sendReport(message, false);
-        return true;
-    }));
+    }
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._isConversationItem = function(item) {
+    if (!item || typeof item !== "object") {
+        return false;
+    }
+    try {
+        if (typeof item.isZmConv === "function" && item.isZmConv()) {
+            return true;
+        }
+        if (item.isZmConv === true || item.isConversation === true) {
+            return true;
+        }
+        if (typeof ZmItem !== "undefined" && typeof ZmItem.CONV !== "undefined" && item.type === ZmItem.CONV) {
+            return true;
+        }
+    } catch (ignoreConversationDetection) {}
+
+    var type = String(item.type || item.itemType || item.__typename || "").toLowerCase();
+    return type === "conv" || type === "conversation" || type === "zmconv" ||
+        type.indexOf("conversation") !== -1 ||
+        typeof item.getMsgList === "function" || typeof item.getFirstHotMsg === "function";
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._isMailMessage = function(item) {
+    if (!item || typeof item !== "object" || this._isConversationItem(item)) {
+        return false;
+    }
+    try {
+        if (typeof item.isZmMailMsg === "function") {
+            return !!item.isZmMailMsg();
+        }
+        if (item.isZmMailMsg === true) {
+            return true;
+        }
+        if (typeof ZmMailMsg !== "undefined" && item instanceof ZmMailMsg) {
+            return true;
+        }
+        if (typeof ZmItem !== "undefined" && typeof ZmItem.MSG !== "undefined" && item.type === ZmItem.MSG) {
+            return true;
+        }
+    } catch (ignoreTypeDetection) {}
+
+    var fallbackId = String(item.id || item.nId || "");
+    return !!fallbackId && fallbackId.charAt(0) !== "-";
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._singleMessageFromConversation = function(item) {
+    if (!item || typeof item !== "object") {
+        return null;
+    }
+    try {
+        if (typeof item.getMsgList === "function") {
+            var messages = item.getMsgList();
+            if (messages && messages.length === 1 && this._isMailMessage(messages[0])) {
+                return messages[0];
+            }
+            return null;
+        }
+    } catch (ignoreConversationList) {}
+    return null;
 };
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getMessage = function(controller) {
-    var item = null;
+    var controllerItem = null;
     try {
         if (controller && controller.getMsg) {
-            item = controller.getMsg();
+            controllerItem = controller.getMsg();
         }
     } catch (ignoreGetMsg) {}
 
-    if (!item) {
-        try {
-            var selection = controller && controller.getSelection ? controller.getSelection() : null;
-            if ((!selection || !selection.length) && controller && controller.getListView) {
-                var listView = controller.getListView();
-                selection = listView && listView.getSelection ? listView.getSelection() : null;
-            }
-            if (selection && selection.length === 1) {
-                item = selection[0];
-            }
-        } catch (ignoreSelection) {}
+    if (this._isMailMessage(controllerItem)) {
+        return controllerItem;
+    }
+    var controllerConversationMessage = this._singleMessageFromConversation(controllerItem);
+    if (controllerConversationMessage) {
+        return controllerConversationMessage;
     }
 
-    if (!item) {
-        return null;
-    }
-    if (item.isZmMailMsg || item.id || item.nId) {
-        return item;
-    }
     try {
-        if (item.getFirstHotMsg) {
-            return item.getFirstHotMsg();
+        var selection = controller && controller.getSelection ? controller.getSelection() : null;
+        if ((!selection || !selection.length) && controller && controller.getListView) {
+            var listView = controller.getListView();
+            selection = listView && listView.getSelection ? listView.getSelection() : null;
         }
-        if (item.getMsgList) {
-            var messages = item.getMsgList();
-            if (messages && messages.length) {
-                return messages[0];
-            }
+        if (!selection || selection.length !== 1) {
+            return null;
         }
-    } catch (ignoreConversation) {}
+        if (this._isMailMessage(selection[0])) {
+            return selection[0];
+        }
+        return this._singleMessageFromConversation(selection[0]);
+    } catch (ignoreSelection) {}
     return null;
 };
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._loadClassificationHeaders = function(messageId, successCallback, errorCallback) {
+    var self = this;
+    var finished = false;
+    var timeoutId = null;
+
+    function clearTimer() {
+        if (timeoutId !== null) {
+            window.clearTimeout(timeoutId);
+            timeoutId = null;
+        }
+    }
+
+    function succeed(headerMap) {
+        if (finished) {
+            return;
+        }
+        finished = true;
+        clearTimer();
+        successCallback.run(headerMap || {});
+    }
+
+    function fail(error) {
+        if (finished) {
+            return;
+        }
+        finished = true;
+        clearTimer();
+        if (errorCallback) {
+            errorCallback.run(error);
+        }
+    }
+
+    timeoutId = window.setTimeout(function() {
+        fail(new Error("Classification request timed out."));
+    }, this._getIntegerConfig("classificationTimeoutMs", 12000, 1000, 60000));
+
     var headers = [];
     var names = this._getHeaderNames();
     for (var i = 0; i < names.length; i++) {
@@ -180,45 +286,81 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._loadClass
         }
     };
 
-    appCtxt.getAppController().sendRequest({
-        jsonObj: request,
-        asyncMode: true,
-        noBusyOverlay: true,
-        callback: new AjxCallback(this, function(response) {
-            var headerMap = this._extractHeaderMap(response);
-            if (this._hasClassificationHeaders(headerMap) && this._isSimulation(headerMap)) {
-                successCallback.run(headerMap);
-                return;
-            }
+    try {
+        appCtxt.getAppController().sendRequest({
+            jsonObj: request,
+            asyncMode: true,
+            noBusyOverlay: true,
+            callback: new AjxCallback(this, function(response) {
+                var headerMap = this._extractHeaderMap(response);
+                if (this._isSimulation(headerMap) || !this._needsRawClassificationHeaders(headerMap)) {
+                    succeed(headerMap);
+                    return;
+                }
 
-            // Some Zimbra versions return only a subset of requested free headers.
-            // Read the authenticated RFC822 source before treating the message as
-            // an ordinary report, so a missing disclaimer does not cause a false negative.
-            this._loadRawClassificationHeaders(messageId, successCallback, new AjxCallback(this, function() {
-                if (this._hasClassificationHeaders(headerMap)) {
-                    successCallback.run(headerMap);
-                    return true;
-                }
-                if (errorCallback) {
-                    errorCallback.run();
-                }
+                // Some Zimbra versions omit free headers in GetMsg. Only use the
+                // authenticated RFC822 fallback when a configured classifier lacks
+                // one of the header families it needs.
+                this._loadRawClassificationHeaders(messageId, {
+                    run: succeed
+                }, {
+                    run: function(rawError) {
+                        if (self._hasClassificationHeaders(headerMap)) {
+                            succeed(headerMap);
+                        } else {
+                            fail(rawError);
+                        }
+                        return true;
+                    }
+                });
+            }),
+            errorCallback: new AjxCallback(this, function(soapError) {
+                this._loadRawClassificationHeaders(messageId, {
+                    run: succeed
+                }, {
+                    run: function(rawError) {
+                        fail(rawError || soapError);
+                        return true;
+                    }
+                });
                 return true;
-            }));
-        }),
-        errorCallback: new AjxCallback(this, function() {
-            this._loadRawClassificationHeaders(messageId, successCallback, errorCallback);
-            return true;
-        })
-    });
+            })
+        });
+    } catch (requestError) {
+        fail(requestError);
+    }
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._hasHeader = function(headerMap, name) {
+    var values = headerMap && headerMap[String(name || "").toLowerCase()];
+    return !!(values && values.join("").replace(/\s/g, "").length);
 };
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._hasClassificationHeaders = function(headerMap) {
     var names = this._getHeaderNames();
     for (var i = 0; i < names.length; i++) {
-        var values = headerMap && headerMap[String(names[i]).toLowerCase()];
-        if (values && values.join("").replace(/\s/g, "").length) {
+        if (this._hasHeader(headerMap, names[i])) {
             return true;
         }
+    }
+    return false;
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._needsRawClassificationHeaders = function(headerMap) {
+    var disclaimerRules = this._splitList(this._getConfig("simulationDisclaimerRules", ""), ";");
+    var disclaimerHeader = this._getConfig("simulationDisclaimerHeader", "X-Disclaimer");
+    if (disclaimerRules.length && !this._hasHeader(headerMap, disclaimerHeader)) {
+        return true;
+    }
+
+    var domains = this._splitList(this._getConfig("simulationDkimDomains", ""), ",");
+    var sources = this._splitList(this._getConfig("simulationSourceIndicators", ""), ",");
+    if (domains.length && !this._hasHeader(headerMap, "Authentication-Results")) {
+        return true;
+    }
+    if (domains.length && sources.length &&
+            (!this._hasHeader(headerMap, "DKIM-Signature") || !this._hasHeader(headerMap, "Received"))) {
+        return true;
     }
     return false;
 };
@@ -230,37 +372,94 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._loadRawCl
         "/home/~/?id=" + encodedId + "&auth=co",
         "/service/home/~/?id=" + encodedId + "&auth=co"
     ];
+    var completed = false;
+    var timeoutMs = this._getIntegerConfig("classificationTimeoutMs", 12000, 1000, 60000);
+    var deadline = new Date().getTime() + timeoutMs;
+
+    function completeSuccess(headerMap) {
+        if (completed) {
+            return;
+        }
+        completed = true;
+        successCallback.run(headerMap);
+    }
+
+    function completeError(error) {
+        if (completed) {
+            return;
+        }
+        completed = true;
+        if (errorCallback) {
+            errorCallback.run(error);
+        }
+    }
 
     function tryUrl(index) {
+        if (completed) {
+            return;
+        }
         if (index >= urls.length) {
-            if (errorCallback) {
-                errorCallback.run();
-            }
+            completeError(new Error("No usable classification headers were returned."));
             return;
         }
 
         var xhr = new XMLHttpRequest();
-        xhr.open("GET", urls[index], true);
-        xhr.withCredentials = true;
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState !== 4) {
+        var attemptCompleted = false;
+
+        function finishAttempt(success, headerMap, error) {
+            if (attemptCompleted || completed) {
                 return;
             }
+            attemptCompleted = true;
+            xhr.onreadystatechange = null;
+            xhr.onerror = null;
+            xhr.ontimeout = null;
+            xhr.onabort = null;
 
-            if (xhr.status >= 200 && xhr.status < 300) {
-                var headerMap = self._extractRawHeaderMap(xhr.responseText || "");
-                if (self._hasClassificationHeaders(headerMap)) {
-                    successCallback.run(headerMap);
+            if (success) {
+                completeSuccess(headerMap);
+            } else if (index + 1 < urls.length) {
+                tryUrl(index + 1);
+            } else {
+                completeError(error || new Error("Classification header request failed."));
+            }
+        }
+
+        try {
+            var remainingMs = deadline - new Date().getTime();
+            if (remainingMs <= 0) {
+                finishAttempt(false, null, new Error("Classification header request timed out."));
+                return;
+            }
+            xhr.open("GET", urls[index], true);
+            xhr.withCredentials = true;
+            xhr.timeout = remainingMs;
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== 4) {
                     return;
                 }
-            }
-
-            tryUrl(index + 1);
-        };
-        xhr.onerror = function() {
-            tryUrl(index + 1);
-        };
-        xhr.send(null);
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    var headerMap = self._extractRawHeaderMap(xhr.responseText || "");
+                    if (self._hasClassificationHeaders(headerMap)) {
+                        finishAttempt(true, headerMap, null);
+                        return;
+                    }
+                }
+                finishAttempt(false, null, new Error("HTTP " + xhr.status));
+            };
+            xhr.onerror = function() {
+                finishAttempt(false, null, new Error("Network error while reading classification headers."));
+            };
+            xhr.ontimeout = function() {
+                finishAttempt(false, null, new Error("Classification header request timed out."));
+            };
+            xhr.onabort = function() {
+                finishAttempt(false, null, new Error("Classification header request was aborted."));
+            };
+            xhr.send(null);
+        } catch (requestError) {
+            finishAttempt(false, null, requestError);
+        }
     }
 
     tryUrl(0);
@@ -384,6 +583,20 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getBoolea
     return value === "true" || value === "1" || value === "yes" || value === "on";
 };
 
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getIntegerConfig = function(name, fallback, minimum, maximum) {
+    var value = parseInt(this._getConfig(name, String(fallback)), 10);
+    if (!isFinite(value)) {
+        value = fallback;
+    }
+    if (typeof minimum === "number" && value < minimum) {
+        value = minimum;
+    }
+    if (typeof maximum === "number" && value > maximum) {
+        value = maximum;
+    }
+    return value;
+};
+
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._splitList = function(value, separator) {
     var result = [];
     var parts = String(value || "").split(separator || ",");
@@ -451,22 +664,46 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._matchesDi
     return false;
 };
 
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._domainPattern = function(domain, parameterName) {
+    return new RegExp(
+        "(?:^|[\\s;])" + parameterName + "\\s*=\\s*" + this._escapeRegExp(domain.toLowerCase()) +
+        "(?:$|[\\s;,()])",
+        "i"
+    );
+};
+
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._matchesDkim = function(headerMap, requirePass) {
     var domains = this._splitList(this._getConfig("simulationDkimDomains", ""), ",");
     if (!domains.length) {
         return false;
     }
-    var authResults = this._joinedHeader(headerMap, "Authentication-Results");
-    var dkimSignature = this._joinedHeader(headerMap, "DKIM-Signature");
-    if (requirePass && !/dkim\s*=\s*pass\b/.test(authResults)) {
+
+    if (requirePass) {
+        var authResults = (headerMap && headerMap["authentication-results"]) || [];
+        for (var a = 0; a < authResults.length; a++) {
+            var clauses = String(authResults[a] || "").toLowerCase().split(";");
+            for (var c = 0; c < clauses.length; c++) {
+                var clause = clauses[c];
+                if (!/dkim\s*=\s*pass\b/.test(clause)) {
+                    continue;
+                }
+                for (var d = 0; d < domains.length; d++) {
+                    if (this._domainPattern(domains[d], "header\\.d").test(clause)) {
+                        return true;
+                    }
+                }
+            }
+        }
         return false;
     }
-    var searchText = requirePass ? authResults : dkimSignature;
-    for (var i = 0; i < domains.length; i++) {
-        var domain = this._escapeRegExp(domains[i].toLowerCase());
-        var pattern = new RegExp("(?:header\\.d|\\bd)\\s*=\\s*" + domain + "(?:\\s|;|$)", "i");
-        if (pattern.test(searchText)) {
-            return true;
+
+    var signatures = (headerMap && headerMap["dkim-signature"]) || [];
+    for (var s = 0; s < signatures.length; s++) {
+        var signature = String(signatures[s] || "").toLowerCase();
+        for (var i = 0; i < domains.length; i++) {
+            if (this._domainPattern(domains[i], "d").test(signature)) {
+                return true;
+            }
         }
     }
     return false;
@@ -486,21 +723,39 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._matchesSo
     return false;
 };
 
-org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._isSimulation = function(headerMap) {
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getSimulationMatchReason = function(headerMap) {
     if (!this._getBooleanConfig("simulationDetectionEnabled", false)) {
-        return false;
+        return "";
     }
-    var disclaimerMatch = this._matchesDisclaimerRules(headerMap);
-    var verifiedDkimMatch = this._matchesDkim(headerMap, true);
-    var rawDkimMatch = this._matchesDkim(headerMap, false);
-    var sourceMatch = this._matchesSourceIndicator(headerMap);
-    return disclaimerMatch || verifiedDkimMatch || (rawDkimMatch && sourceMatch);
+    if (this._matchesDisclaimerRules(headerMap)) {
+        return "disclaimer";
+    }
+    if (this._matchesDkim(headerMap, true)) {
+        return "dkim-pass";
+    }
+    if (this._matchesDkim(headerMap, false) && this._matchesSourceIndicator(headerMap)) {
+        return "dkim-signature+source";
+    }
+    return "";
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._isSimulation = function(headerMap) {
+    return !!this._getSimulationMatchReason(headerMap);
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._normalizeRecipient = function(value) {
+    return String(value || "").replace(/^\s+|\s+$/g, "");
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._isValidRecipient = function(value) {
+    return /^[^\s@<>;,]+@[^\s@<>;,]+$/.test(this._normalizeRecipient(value));
 };
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getRoute = function(isSimulation) {
+    var recipient;
     if (isSimulation) {
-        var simulationAddress = this._getConfig("simulationReportAddress", "");
-        if (!simulationAddress) {
+        recipient = this._normalizeRecipient(this._getConfig("simulationReportAddress", ""));
+        if (!recipient) {
             return {
                 error: this._getConfig(
                     "configurationErrorSimulationAddress",
@@ -508,8 +763,13 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getRoute 
                 )
             };
         }
+        if (!this._isValidRecipient(recipient)) {
+            return {
+                error: this._getConfig("configurationErrorInvalidAddress", "The configured report address is invalid.")
+            };
+        }
         return {
-            recipient: simulationAddress,
+            recipient: recipient,
             subjectPrefix: this._getConfig("simulationSubjectPrefix", "Phishing simulation reported: "),
             successMessage: this._getConfig(
                 "simulationSuccessMessage",
@@ -518,8 +778,8 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getRoute 
         };
     }
 
-    var internalAddress = this._getConfig("internalReportAddress", "");
-    if (!internalAddress) {
+    recipient = this._normalizeRecipient(this._getConfig("internalReportAddress", ""));
+    if (!recipient) {
         return {
             error: this._getConfig(
                 "configurationErrorInternalAddress",
@@ -527,8 +787,13 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getRoute 
             )
         };
     }
+    if (!this._isValidRecipient(recipient)) {
+        return {
+            error: this._getConfig("configurationErrorInvalidAddress", "The configured report address is invalid.")
+        };
+    }
     return {
-        recipient: internalAddress,
+        recipient: recipient,
         subjectPrefix: this._getConfig("internalSubjectPrefix", "Suspicious email reported: "),
         successMessage: this._getConfig(
             "internalSuccessMessage",
@@ -557,30 +822,36 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._sendRepor
     this._pendingAlreadyInTarget = String(message.folderId || message.l || "") ===
         this._pendingTargetFolderId;
     this._pendingSuccessMessage = route.successMessage;
-    var recipient = route.recipient;
 
     var request = {
         SendMsgRequest: {
             _jsns: "urn:zimbraMail",
             noSave: 1,
             m: {
-                e: [{ t: "t", a: recipient }],
+                e: [{ t: "t", a: route.recipient }],
                 su: route.subjectPrefix + originalSubject,
                 attach: { m: [{ id: this._pendingMessageId }] }
             }
         }
     };
 
-    appCtxt.getAppController().sendRequest({
-        jsonObj: request,
-        asyncMode: true,
-        noBusyOverlay: false,
-        callback: new AjxCallback(this, this._onReportAccepted),
-        errorCallback: new AjxCallback(this, this._onReportError)
-    });
+    try {
+        appCtxt.getAppController().sendRequest({
+            jsonObj: request,
+            asyncMode: true,
+            noBusyOverlay: false,
+            callback: new AjxCallback(this, this._onReportAccepted),
+            errorCallback: new AjxCallback(this, this._onReportError)
+        });
+    } catch (sendError) {
+        this._onReportError(sendError);
+    }
 };
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._onReportAccepted = function() {
+    if (this._pendingMessageId) {
+        this._reportedMessageIds[this._pendingMessageId] = true;
+    }
     if (!this._pendingShouldMove || this._pendingAlreadyInTarget) {
         this._finishFeedback();
         return;
@@ -600,13 +871,17 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._moveToTar
         }
     };
 
-    appCtxt.getAppController().sendRequest({
-        jsonObj: request,
-        asyncMode: true,
-        noBusyOverlay: false,
-        callback: new AjxCallback(this, this._onMoveSuccess),
-        errorCallback: new AjxCallback(this, this._onMoveError)
-    });
+    try {
+        appCtxt.getAppController().sendRequest({
+            jsonObj: request,
+            asyncMode: true,
+            noBusyOverlay: false,
+            callback: new AjxCallback(this, this._onMoveSuccess),
+            errorCallback: new AjxCallback(this, this._onMoveError)
+        });
+    } catch (moveError) {
+        this._onMoveError(moveError);
+    }
 };
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._onMoveSuccess = function() {
@@ -620,29 +895,53 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._finishFee
     this._setStatus(successMessage);
 };
 
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._formatErrorMessage = function(name, fallback, reference) {
+    var label = this._getConfig("errorReferenceLabel", "Reference");
+    return this._getConfig(name, fallback) + "\n\n" + label + ": " + reference;
+};
+
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._onMoveError = function(error) {
-    var detail = this._getErrorDetail(error);
+    this._logError("PR-MOVE-01", error);
     this._resetPending();
-    this._showError(
-        this._getConfig("moveErrorMessage", "The email was reported but could not be moved.") + detail
-    );
+    this._showError(this._formatErrorMessage(
+        "moveErrorMessage",
+        "The email was reported but could not be moved.",
+        "PR-MOVE-01"
+    ));
     return true;
 };
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._onReportError = function(error) {
-    var detail = this._getErrorDetail(error);
+    this._logError("PR-SEND-01", error);
     this._resetPending();
-    this._showError(this._getConfig("sendErrorMessage", "The email could not be reported and was not moved.") + detail);
+    this._showError(this._formatErrorMessage(
+        "sendErrorMessage",
+        "The email could not be reported and was not moved.",
+        "PR-SEND-01"
+    ));
     return true;
 };
 
-org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._getErrorDetail = function(error) {
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._debug = function(message, detail) {
+    if (!this._getBooleanConfig("debugLogging", false)) {
+        return;
+    }
     try {
-        if (error && error.getDetail) {
-            return "\n\n" + error.getDetail();
+        if (typeof console !== "undefined" && console.log) {
+            console.log("[Zimbra Phishing Reporter] " + message, detail || "");
         }
-    } catch (ignoreDetail) {}
-    return "";
+    } catch (ignoreDebug) {}
+};
+
+org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._logError = function(reference, error) {
+    if (!this._getBooleanConfig("debugLogging", false)) {
+        return;
+    }
+    try {
+        if (typeof console !== "undefined" && console.error) {
+            console.error("[Zimbra Phishing Reporter] " + reference, error || "");
+        }
+    } catch (ignoreErrorLog) {}
 };
 
 org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._resetPending = function() {

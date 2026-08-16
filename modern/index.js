@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Modern UI - Version 2.0.1 */
+/* Zimbra Phishing Reporter - Modern UI - Version 2.1.0 */
 (function () {
     "use strict";
 
@@ -10,8 +10,10 @@
         var ActionMenuItem = components.ActionMenuItem;
         var graphql = shims["@zimbra-client/graphql"] || {};
         var withActionMutation = graphql.withActionMutation;
+        var ZIMLET_NAME = "org_zimbracommunity_phishing_reporter_modern";
         var DEFAULT_TARGET_FOLDER_ID = "4";
         var busy = false;
+        var reportedMessageIds = {};
 
         function notify(message) {
             try {
@@ -73,18 +75,68 @@
                 });
             }
 
-            var accountZimlets = null;
+            function findNamedZimlet(node, depth) {
+                if (!node || depth > 10) {
+                    return null;
+                }
+                if (Array.isArray(node)) {
+                    for (var i = 0; i < node.length; i++) {
+                        var arrayMatch = findNamedZimlet(node[i], depth + 1);
+                        if (arrayMatch) {
+                            return arrayMatch;
+                        }
+                    }
+                    return null;
+                }
+                if (typeof node !== "object") {
+                    return null;
+                }
+                if (Object.prototype.hasOwnProperty.call(node, ZIMLET_NAME) &&
+                        node[ZIMLET_NAME] && typeof node[ZIMLET_NAME] === "object") {
+                    return node[ZIMLET_NAME];
+                }
+                var nodeName = node.name || node.zimlet || (node._attrs && node._attrs.name);
+                if (String(nodeName || "") === ZIMLET_NAME) {
+                    return node;
+                }
+                var keys = Object.keys(node);
+                for (var k = 0; k < keys.length; k++) {
+                    var objectMatch = findNamedZimlet(node[keys[k]], depth + 1);
+                    if (objectMatch) {
+                        return objectMatch;
+                    }
+                }
+                return null;
+            }
+
+            var accountZimletConfig = null;
             try {
-                accountZimlets = context.getAccount && context.getAccount().zimlets;
+                var accountZimlets = context.getAccount && context.getAccount().zimlets;
+                accountZimletConfig = findNamedZimlet(accountZimlets, 0);
             } catch (ignoreAccountConfig) {}
+
+            function scopeCandidate(candidate) {
+                if (!candidate || typeof candidate !== "object") {
+                    return candidate;
+                }
+                var named = findNamedZimlet(candidate, 0);
+                if (named) {
+                    return named;
+                }
+                if (Array.isArray(candidate) || candidate.zimlets ||
+                        (candidate.zimlet && typeof candidate.zimlet === "object")) {
+                    return null;
+                }
+                return candidate;
+            }
 
             [
                 context.zimletConfig,
                 context.config,
                 context.zimlet && context.zimlet.zimletConfig,
-                accountZimlets
+                accountZimletConfig
             ].forEach(function (candidate) {
-                walk(candidate, 0);
+                walk(scopeCandidate(candidate), 0);
             });
 
             if (found === null || typeof found === "undefined" || String(found) === "") {
@@ -96,6 +148,20 @@
         function readBooleanConfig(name, fallback) {
             var value = String(readConfig(name, fallback ? "true" : "false") || "").toLowerCase();
             return value === "true" || value === "1" || value === "yes" || value === "on";
+        }
+
+        function readIntegerConfig(name, fallback, minimum, maximum) {
+            var value = parseInt(readConfig(name, String(fallback)), 10);
+            if (!isFinite(value)) {
+                value = fallback;
+            }
+            if (typeof minimum === "number" && value < minimum) {
+                value = minimum;
+            }
+            if (typeof maximum === "number" && value > maximum) {
+                value = maximum;
+            }
+            return value;
         }
 
         function splitList(value, separator) {
@@ -127,9 +193,17 @@
                 });
         }
 
+        function headerValues(headerMap, name) {
+            return (headerMap && headerMap[String(name || "").toLowerCase()]) || [];
+        }
+
+        function hasHeader(headerMap, name) {
+            var values = headerValues(headerMap, name);
+            return values && values.join("").replace(/\s/g, "").length > 0;
+        }
+
         function joinedHeader(headerMap, name) {
-            return ((headerMap && headerMap[String(name || "").toLowerCase()]) || [])
-                .join("\n").toLowerCase();
+            return headerValues(headerMap, name).join("\n").toLowerCase();
         }
 
         function matchesDisclaimerRules(headerMap) {
@@ -149,23 +223,38 @@
             });
         }
 
+        function domainPattern(domain, parameterName) {
+            return new RegExp(
+                "(?:^|[\\s;])" + parameterName + "\\s*=\\s*" + escapeRegExp(domain.toLowerCase()) +
+                "(?:$|[\\s;,()])",
+                "i"
+            );
+        }
+
         function matchesDkim(headerMap, requirePass) {
             var domains = splitList(readConfig("simulationDkimDomains", ""), ",");
             if (!domains.length) {
                 return false;
             }
-            var authResults = joinedHeader(headerMap, "Authentication-Results");
-            var dkimSignature = joinedHeader(headerMap, "DKIM-Signature");
-            if (requirePass && !/dkim\s*=\s*pass\b/.test(authResults)) {
-                return false;
+
+            if (requirePass) {
+                return headerValues(headerMap, "Authentication-Results").some(function (result) {
+                    return String(result || "").toLowerCase().split(";").some(function (clause) {
+                        if (!/dkim\s*=\s*pass\b/.test(clause)) {
+                            return false;
+                        }
+                        return domains.some(function (domain) {
+                            return domainPattern(domain, "header\\.d").test(clause);
+                        });
+                    });
+                });
             }
-            var searchText = requirePass ? authResults : dkimSignature;
-            return domains.some(function (domain) {
-                var pattern = new RegExp(
-                    "(?:header\\.d|\\bd)\\s*=\\s*" + escapeRegExp(domain.toLowerCase()) + "(?:\\s|;|$)",
-                    "i"
-                );
-                return pattern.test(searchText);
+
+            return headerValues(headerMap, "DKIM-Signature").some(function (signature) {
+                var content = String(signature || "").toLowerCase();
+                return domains.some(function (domain) {
+                    return domainPattern(domain, "d").test(content);
+                });
             });
         }
 
@@ -180,19 +269,64 @@
             });
         }
 
-        function isSimulation(headerMap) {
+        function getSimulationMatchReason(headerMap) {
             if (!readBooleanConfig("simulationDetectionEnabled", false)) {
-                return false;
+                return "";
             }
-            return matchesDisclaimerRules(headerMap) ||
-                matchesDkim(headerMap, true) ||
-                (matchesDkim(headerMap, false) && matchesSourceIndicator(headerMap));
+            if (matchesDisclaimerRules(headerMap)) {
+                return "disclaimer";
+            }
+            if (matchesDkim(headerMap, true)) {
+                return "dkim-pass";
+            }
+            if (matchesDkim(headerMap, false) && matchesSourceIndicator(headerMap)) {
+                return "dkim-signature+source";
+            }
+            return "";
         }
 
-        function getRoute(isSimulation) {
-            if (isSimulation) {
-                var simulationAddress = readConfig("simulationReportAddress", "");
-                if (!simulationAddress) {
+        function isSimulation(headerMap) {
+            return !!getSimulationMatchReason(headerMap);
+        }
+
+        function hasClassificationHeaders(headerMap) {
+            return getHeaderNames().some(function (name) {
+                return hasHeader(headerMap, name);
+            });
+        }
+
+        function needsRawClassificationHeaders(headerMap) {
+            var disclaimerRules = splitList(readConfig("simulationDisclaimerRules", ""), ";");
+            if (disclaimerRules.length &&
+                    !hasHeader(headerMap, readConfig("simulationDisclaimerHeader", "X-Disclaimer"))) {
+                return true;
+            }
+
+            var domains = splitList(readConfig("simulationDkimDomains", ""), ",");
+            var sources = splitList(readConfig("simulationSourceIndicators", ""), ",");
+            if (domains.length && !hasHeader(headerMap, "Authentication-Results")) {
+                return true;
+            }
+            if (domains.length && sources.length &&
+                    (!hasHeader(headerMap, "DKIM-Signature") || !hasHeader(headerMap, "Received"))) {
+                return true;
+            }
+            return false;
+        }
+
+        function normalizeRecipient(value) {
+            return String(value || "").trim();
+        }
+
+        function isValidRecipient(value) {
+            return /^[^\s@<>;,]+@[^\s@<>;,]+$/.test(normalizeRecipient(value));
+        }
+
+        function getRoute(simulation) {
+            var recipient;
+            if (simulation) {
+                recipient = normalizeRecipient(readConfig("simulationReportAddress", ""));
+                if (!recipient) {
                     return {
                         error: readConfig(
                             "configurationErrorSimulationAddress",
@@ -200,8 +334,13 @@
                         )
                     };
                 }
+                if (!isValidRecipient(recipient)) {
+                    return {
+                        error: readConfig("configurationErrorInvalidAddress", "The configured report address is invalid.")
+                    };
+                }
                 return {
-                    recipient: simulationAddress,
+                    recipient: recipient,
                     subjectPrefix: readConfig("simulationSubjectPrefix", "Phishing simulation reported: "),
                     successMessage: readConfig(
                         "simulationSuccessMessage",
@@ -210,8 +349,8 @@
                 };
             }
 
-            var internalAddress = readConfig("internalReportAddress", "");
-            if (!internalAddress) {
+            recipient = normalizeRecipient(readConfig("internalReportAddress", ""));
+            if (!recipient) {
                 return {
                     error: readConfig(
                         "configurationErrorInternalAddress",
@@ -219,8 +358,13 @@
                     )
                 };
             }
+            if (!isValidRecipient(recipient)) {
+                return {
+                    error: readConfig("configurationErrorInvalidAddress", "The configured report address is invalid.")
+                };
+            }
             return {
-                recipient: internalAddress,
+                recipient: recipient,
                 subjectPrefix: readConfig("internalSubjectPrefix", "Suspicious email reported: "),
                 successMessage: readConfig(
                     "internalSuccessMessage",
@@ -229,17 +373,52 @@
             };
         }
 
-        function resolveMessage(emailData) {
-            if (!emailData) {
+        function candidateMessage(value) {
+            if (!value || typeof value !== "object" || !(value.id || value.nId)) {
                 return null;
             }
-            if (emailData.messages && emailData.messages.length) {
-                return emailData.messages[0];
+            var type = String(value.type || value.itemType || value.__typename || "").toLowerCase();
+            var id = String(value.id || value.nId || "");
+            var conversation = value.isConversation === true || value.isZmConv === true;
+            try {
+                conversation = conversation ||
+                    (typeof value.isConversation === "function" && value.isConversation()) ||
+                    (typeof value.isZmConv === "function" && value.isZmConv());
+            } catch (ignoreConversationDetection) {}
+            if (conversation || type === "conv" || type === "conversation" || type === "zmconv" ||
+                    type.indexOf("conversation") !== -1 || id.charAt(0) === "-") {
+                return null;
             }
-            if (emailData.messagesMetaData && emailData.messagesMetaData.length) {
-                return emailData.messagesMetaData[0];
+            return value;
+        }
+
+        function resolveMessage(emailData) {
+            if (!emailData || typeof emailData !== "object") {
+                return null;
             }
-            return emailData;
+
+            var explicitCandidates = [
+                emailData.message,
+                emailData.selectedMessage,
+                emailData.activeMessage,
+                emailData.currentMessage
+            ];
+            for (var i = 0; i < explicitCandidates.length; i++) {
+                var explicitMessage = candidateMessage(explicitCandidates[i]);
+                if (explicitMessage) {
+                    return explicitMessage;
+                }
+            }
+
+            if (Array.isArray(emailData.messages)) {
+                return emailData.messages.length === 1 ? candidateMessage(emailData.messages[0]) : null;
+            }
+            if (Array.isArray(emailData.messagesMetaData)) {
+                return emailData.messagesMetaData.length === 1 ?
+                    candidateMessage(emailData.messagesMetaData[0]) : null;
+            }
+
+            return candidateMessage(emailData);
         }
 
         function phishingIcon() {
@@ -328,13 +507,6 @@
             return map;
         }
 
-        function hasClassificationHeaders(headerMap) {
-            return getHeaderNames().some(function (name) {
-                var values = headerMap && headerMap[String(name).toLowerCase()];
-                return values && values.join("").replace(/\s/g, "").length > 0;
-            });
-        }
-
         function extractRawHeaderMap(rawMessage) {
             var map = {};
             var text = String(rawMessage || "");
@@ -376,17 +548,49 @@
             return map;
         }
 
-        function requestRawHeaders(url) {
-            return window.fetch(url, {
+        function fetchTextWithTimeout(url, timeoutMs) {
+            var controller = null;
+            try {
+                if (typeof window.AbortController === "function") {
+                    controller = new window.AbortController();
+                }
+            } catch (ignoreAbortController) {}
+
+            var fetchPromise = window.fetch(url, {
                 method: "GET",
                 credentials: "same-origin",
-                cache: "no-store"
+                cache: "no-store",
+                signal: controller ? controller.signal : undefined
             }).then(function (response) {
                 if (!response.ok) {
                     throw new Error("HTTP " + response.status);
                 }
                 return response.text();
-            }).then(function (rawMessage) {
+            });
+
+            var timer;
+            var timeoutPromise = new Promise(function (resolve, reject) {
+                timer = window.setTimeout(function () {
+                    try {
+                        if (controller) {
+                            controller.abort();
+                        }
+                    } catch (ignoreAbort) {}
+                    reject(new Error("Classification header request timed out."));
+                }, timeoutMs);
+            });
+
+            return Promise.race([fetchPromise, timeoutPromise]).then(function (text) {
+                window.clearTimeout(timer);
+                return text;
+            }, function (error) {
+                window.clearTimeout(timer);
+                throw error;
+            });
+        }
+
+        function requestRawHeaders(url, timeoutMs) {
+            return fetchTextWithTimeout(url, timeoutMs).then(function (rawMessage) {
                 var headerMap = extractRawHeaderMap(rawMessage);
                 if (!hasClassificationHeaders(headerMap)) {
                     throw new Error("No usable classification headers were returned.");
@@ -397,28 +601,58 @@
 
         function loadRawClassificationHeaders(messageId) {
             var encodedId = encodeURIComponent(String(messageId));
-            return requestRawHeaders("/home/~/?id=" + encodedId + "&auth=co")
+            var totalTimeoutMs = readIntegerConfig("classificationTimeoutMs", 12000, 1000, 60000);
+            var deadline = new Date().getTime() + totalTimeoutMs;
+
+            function requestWithinDeadline(url) {
+                var remainingMs = deadline - new Date().getTime();
+                if (remainingMs <= 0) {
+                    return Promise.reject(new Error("Classification header request timed out."));
+                }
+                return requestRawHeaders(url, remainingMs);
+            }
+
+            return requestWithinDeadline("/home/~/?id=" + encodedId + "&auth=co")
                 .catch(function () {
-                    return requestRawHeaders("/service/home/~/?id=" + encodedId + "&auth=co");
+                    return requestWithinDeadline("/service/home/~/?id=" + encodedId + "&auth=co");
                 });
         }
 
+        function withClassificationTimeout(promise) {
+            var timeoutMs = readIntegerConfig("classificationTimeoutMs", 12000, 1000, 60000);
+            var timer;
+            var timeoutPromise = new Promise(function (resolve, reject) {
+                timer = window.setTimeout(function () {
+                    reject(new Error("Classification request timed out."));
+                }, timeoutMs);
+            });
+            return Promise.race([promise, timeoutPromise]).then(function (value) {
+                window.clearTimeout(timer);
+                return value;
+            }, function (error) {
+                window.clearTimeout(timer);
+                throw error;
+            });
+        }
+
         function loadClassificationHeaders(messageId) {
-            return context.zimbraBatchClient.jsonRequest({
-                name: "GetMsg",
-                namespace: "urn:zimbraMail",
-                body: {
-                    m: {
-                        id: String(messageId),
-                        read: 0,
-                        max: 1,
-                        header: getHeaderNames().map(function (name) { return { n: name }; })
-                    }
-                },
-                singleRequest: true
+            var operation = Promise.resolve().then(function () {
+                return context.zimbraBatchClient.jsonRequest({
+                    name: "GetMsg",
+                    namespace: "urn:zimbraMail",
+                    body: {
+                        m: {
+                            id: String(messageId),
+                            read: 0,
+                            max: 1,
+                            header: getHeaderNames().map(function (name) { return { n: name }; })
+                        }
+                    },
+                    singleRequest: true
+                });
             }).then(extractHeaderMap)
                 .then(function (headerMap) {
-                    if (hasClassificationHeaders(headerMap) && isSimulation(headerMap)) {
+                    if (isSimulation(headerMap) || !needsRawClassificationHeaders(headerMap)) {
                         return headerMap;
                     }
                     return loadRawClassificationHeaders(messageId)
@@ -427,6 +661,7 @@
                 .catch(function () {
                     return loadRawClassificationHeaders(messageId);
                 });
+            return withClassificationTimeout(operation);
         }
 
         function sendReport(messageId, originalSubject, route) {
@@ -496,24 +731,50 @@
                 return Promise.resolve();
             }
 
-            try {
+            return Promise.resolve().then(function () {
                 if (typeof client.refetchQueries === "function") {
-                    return Promise.resolve(client.refetchQueries({ include: "active" }))
-                        .catch(function () { return null; });
+                    return client.refetchQueries({ include: "active" });
                 }
+                throw new Error("refetchQueries is unavailable");
+            }).catch(function () {
                 if (typeof client.reFetchObservableQueries === "function") {
-                    return Promise.resolve(client.reFetchObservableQueries(true))
-                        .catch(function () { return null; });
+                    return client.reFetchObservableQueries(true);
                 }
-            } catch (ignoreRefreshError) {
-                return Promise.resolve();
-            }
-
-            return Promise.resolve();
+                return null;
+            }).catch(function () {
+                return null;
+            });
         }
 
         function finishFeedback(route) {
             notify(route.successMessage);
+        }
+
+        function formatErrorMessage(name, fallback, reference) {
+            return readConfig(name, fallback) + "\n\n" +
+                readConfig("errorReferenceLabel", "Reference") + ": " + reference;
+        }
+
+        function debug(message, detail) {
+            if (!readBooleanConfig("debugLogging", false)) {
+                return;
+            }
+            try {
+                if (window.console && window.console.log) {
+                    window.console.log("[Zimbra Phishing Reporter] " + message, detail || "");
+                }
+            } catch (ignoreDebug) {}
+        }
+
+        function logError(reference, error) {
+            if (!readBooleanConfig("debugLogging", false)) {
+                return;
+            }
+            try {
+                if (window.console && window.console.error) {
+                    window.console.error("[Zimbra Phishing Reporter] " + reference, error || "");
+                }
+            } catch (ignoreErrorLog) {}
         }
 
         function reportMessage(props) {
@@ -525,7 +786,16 @@
             var message = resolveMessage(props && props.emailData);
             var messageId = message && (message.id || message.nId);
             if (!messageId) {
-                showDialog(readConfig("selectOneMessageMessage", "Open or select exactly one email."));
+                showDialog(readConfig(
+                    "selectOneMessageMessage",
+                    "Open the suspicious email individually and try again."
+                ));
+                return;
+            }
+
+            messageId = String(messageId);
+            if (reportedMessageIds[messageId]) {
+                notify(readConfig("alreadyReportedMessage", "This email has already been reported in this session."));
                 return;
             }
 
@@ -539,16 +809,21 @@
             busy = true;
             var classification = readBooleanConfig("simulationDetectionEnabled", false) ?
                 loadClassificationHeaders(messageId)
-                    .then(isSimulation)
-                    .catch(function () {
-                        // If classification is unavailable, use the normal internal reporting route.
+                    .then(function (headerMap) {
+                        var matchReason = getSimulationMatchReason(headerMap);
+                        debug("Classification completed", matchReason || "internal route");
+                        return !!matchReason;
+                    })
+                    .catch(function (classificationError) {
+                        logError("PR-CLASSIFY-01", classificationError);
+                        // Classification failures must never block the internal reporting route.
                         return false;
                     }) :
                 Promise.resolve(false);
 
-            classification
-                .then(function (isSimulationMessage) {
-                    var route = getRoute(isSimulationMessage);
+            var operation = classification
+                .then(function (simulationMessage) {
+                    var route = getRoute(simulationMessage);
                     if (!route.recipient) {
                         var configurationError = new Error(route.error);
                         configurationError.reporterConfigurationError = true;
@@ -557,6 +832,7 @@
 
                     return sendReport(messageId, originalSubject, route)
                         .then(function () {
+                            reportedMessageIds[messageId] = true;
                             if (!shouldMove || alreadyInTarget) {
                                 finishFeedback(route);
                                 return null;
@@ -565,13 +841,12 @@
                                 .then(function () { return refreshMessageList(); })
                                 .then(function () { finishFeedback(route); })
                                 .catch(function (moveError) {
-                                    var moveDetail = moveError && moveError.message ? "\n\n" + moveError.message : "";
-                                    showDialog(
-                                        readConfig(
-                                            "moveErrorMessage",
-                                            "The email was reported but could not be moved."
-                                        ) + moveDetail
-                                    );
+                                    logError("PR-MOVE-01", moveError);
+                                    showDialog(formatErrorMessage(
+                                        "moveErrorMessage",
+                                        "The email was reported but could not be moved.",
+                                        "PR-MOVE-01"
+                                    ));
                                 });
                         });
                 })
@@ -580,15 +855,25 @@
                         showDialog(sendError.message);
                         return;
                     }
-                    var sendDetail = sendError && sendError.message ? "\n\n" + sendError.message : "";
-                    showDialog(
-                        readConfig("sendErrorMessage", "The email could not be reported and was not moved.") +
-                        sendDetail
-                    );
-                })
-                .then(function () {
-                    busy = false;
+                    logError("PR-SEND-01", sendError);
+                    showDialog(formatErrorMessage(
+                        "sendErrorMessage",
+                        "The email could not be reported and was not moved.",
+                        "PR-SEND-01"
+                    ));
                 });
+
+            operation.then(function () {
+                busy = false;
+            }, function (unexpectedError) {
+                busy = false;
+                logError("PR-UNEXPECTED-01", unexpectedError);
+                showDialog(formatErrorMessage(
+                    "sendErrorMessage",
+                    "The email could not be reported and was not moved.",
+                    "PR-UNEXPECTED-01"
+                ));
+            });
         }
 
         function PhishingReportMenuItem(props) {
@@ -616,6 +901,8 @@
 
         return {
             init: function () {
+                // Zimbra Modern exposes the stable extension point in the "More"
+                // action menu. A direct toolbar button is intentionally not used.
                 context.plugins.register("slot::action-menu-mail-more", RegisteredMenuItem);
             }
         };
