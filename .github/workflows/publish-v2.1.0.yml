@@ -1,0 +1,149 @@
+name: Publish Zimbra Phishing Reporter 2.1.0
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: contains(github.event.head_commit.message, '[publish-v2.1.0]')
+    runs-on: ubuntu-latest
+    env:
+      TAG: v2.1.0
+      TARGET_SHA: a5537a9263bcf5f5dee245ac24ed31904b6f613d
+      CLASSIC_ZIP: dist/org_zimbracommunity_phishing_reporter_classic.zip
+      MODERN_ZIP: dist/org_zimbracommunity_phishing_reporter_modern.zip
+      SUMS_FILE: dist/SHA256SUMS
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release target, tests and package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse "${GITHUB_SHA}^")" = "$TARGET_SHA"
+          git cat-file -e "${TARGET_SHA}^{commit}"
+
+          node --check classic/org_zimbracommunity_phishing_reporter_classic.js
+          node --check modern/index.js
+          node tests/detection-test.js
+
+          (
+            cd dist
+            sha256sum -c SHA256SUMS
+            unzip -t org_zimbracommunity_phishing_reporter_classic.zip
+            unzip -t org_zimbracommunity_phishing_reporter_modern.zip
+          )
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          mkdir -p "$tmpdir/classic" "$tmpdir/modern"
+          unzip -q "$CLASSIC_ZIP" -d "$tmpdir/classic"
+          unzip -q "$MODERN_ZIP" -d "$tmpdir/modern"
+
+          for file in \
+            org_zimbracommunity_phishing_reporter_classic.properties \
+            org_zimbracommunity_phishing_reporter_classic_de.properties \
+            org_zimbracommunity_phishing_reporter_classic.xml \
+            org_zimbracommunity_phishing_reporter_classic.css \
+            org_zimbracommunity_phishing_reporter_classic.js \
+            shield-alert-16.png \
+            config_template.xml
+          do
+            cmp "classic/$file" "$tmpdir/classic/$file"
+          done
+
+          for file in \
+            org_zimbracommunity_phishing_reporter_modern.properties \
+            org_zimbracommunity_phishing_reporter_modern_de.properties \
+            org_zimbracommunity_phishing_reporter_modern.xml \
+            index.js \
+            config_template.xml
+          do
+            cmp "modern/$file" "$tmpdir/modern/$file"
+          done
+
+          grep -q 'version="2.1.0"' "$tmpdir/classic/org_zimbracommunity_phishing_reporter_classic.xml"
+          grep -q 'version="2.1.0"' "$tmpdir/modern/org_zimbracommunity_phishing_reporter_modern.xml"
+
+      - name: Create tag and GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+            tagged_sha="$(git rev-list -n 1 "$TAG")"
+            test "$tagged_sha" = "$TARGET_SHA"
+          else
+            git tag -a "$TAG" "$TARGET_SHA" -m "Zimbra Phishing Reporter 2.1.0"
+            git push origin "refs/tags/$TAG"
+          fi
+
+          cat > /tmp/release-notes.md <<'EOF'
+          ## Zimbra Phishing Reporter 2.1.0
+
+          This release hardens the Classic and Modern reporting flows while preserving the established deployment model.
+
+          ### Changed
+
+          - prevents conversation IDs from being submitted as message IDs
+          - requires an unambiguous individual message in Classic and Modern conversation views
+          - keeps the Modern action intentionally under **More**; no direct Modern toolbar integration is attempted
+          - reads only headers already present on the message and never adds or changes mail headers
+          - requires `dkim=pass` and the configured `header.d` value to occur in the same `Authentication-Results` result clause
+          - retains the existing disclaimer match and DKIM-signature-plus-source fallback behavior
+          - limits classification requests with a configurable timeout
+          - avoids unnecessary RFC822 fallback downloads when the required header families are available
+          - prevents duplicate callback completion and duplicate reports during one browser session
+          - validates reporting routes as exactly one plain email address
+          - hides technical server details from user dialogs and adds stable support references
+          - scopes Modern configuration lookup to this Zimlet and improves Apollo list refresh fallback
+          - expands automated coverage for conversation handling, DKIM isolation, timeouts, duplicate events and safe errors
+
+          ### Downloads
+
+          - Classic Zimlet package
+          - Modern Zimlet package
+          - `SHA256SUMS` for integrity verification
+
+          See `CHANGELOG.md`, `README.md` and `README.de.md` for details and deployment instructions.
+          EOF
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "$CLASSIC_ZIP" \
+              "$MODERN_ZIP" \
+              "$SUMS_FILE" \
+              --clobber \
+              --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" \
+              --title "Zimbra Phishing Reporter 2.1.0" \
+              --notes-file /tmp/release-notes.md \
+              --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" \
+              "$CLASSIC_ZIP" \
+              "$MODERN_ZIP" \
+              "$SUMS_FILE" \
+              --title "Zimbra Phishing Reporter 2.1.0" \
+              --notes-file /tmp/release-notes.md \
+              --verify-tag \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
