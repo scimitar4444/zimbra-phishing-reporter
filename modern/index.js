@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Modern UI - Version 2.1.0 */
+/* Zimbra Phishing Reporter - Modern UI - Version 2.1.1 */
 (function () {
     "use strict";
 
@@ -91,12 +91,43 @@
                 if (typeof node !== "object") {
                     return null;
                 }
+
+                function containsRequestedProperty(candidate, propertyDepth) {
+                    if (!candidate || propertyDepth > 12) {
+                        return false;
+                    }
+                    if (Array.isArray(candidate)) {
+                        return candidate.some(function (item) {
+                            return containsRequestedProperty(item, propertyDepth + 1);
+                        });
+                    }
+                    if (typeof candidate !== "object") {
+                        return false;
+                    }
+                    if (Object.prototype.hasOwnProperty.call(candidate, name)) {
+                        return true;
+                    }
+                    if (candidate._attrs &&
+                            (Object.prototype.hasOwnProperty.call(candidate._attrs, name) ||
+                             String(candidate._attrs.name || "") === name)) {
+                        return true;
+                    }
+                    if (String(candidate.name || "") === name) {
+                        return true;
+                    }
+                    return Object.keys(candidate).some(function (key) {
+                        return containsRequestedProperty(candidate[key], propertyDepth + 1);
+                    });
+                }
+
                 if (Object.prototype.hasOwnProperty.call(node, ZIMLET_NAME) &&
-                        node[ZIMLET_NAME] && typeof node[ZIMLET_NAME] === "object") {
+                        node[ZIMLET_NAME] && typeof node[ZIMLET_NAME] === "object" &&
+                        containsRequestedProperty(node[ZIMLET_NAME], 0)) {
                     return node[ZIMLET_NAME];
                 }
                 var nodeName = node.name || node.zimlet || (node._attrs && node._attrs.name);
-                if (String(nodeName || "") === ZIMLET_NAME) {
+                if (String(nodeName || "") === ZIMLET_NAME &&
+                        containsRequestedProperty(node, 0)) {
                     return node;
                 }
                 var keys = Object.keys(node);

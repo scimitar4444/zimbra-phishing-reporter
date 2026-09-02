@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<zimletConfig name="org_zimbracommunity_phishing_reporter_classic" version="2.1.0">
+<zimletConfig name="org_zimbracommunity_phishing_reporter_classic" version="2.1.1">
     <global>
         <property name="internalReportAddress"></property>
         <property name="simulationReportAddress"></property>

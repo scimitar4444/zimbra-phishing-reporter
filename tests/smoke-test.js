@@ -8,7 +8,8 @@ const childProcess = require("child_process");
 const root = path.resolve(__dirname, "..");
 const classicId = "org_zimbracommunity_phishing_reporter_classic";
 const modernId = "org_zimbracommunity_phishing_reporter_modern";
-const expectedVersion = "2.1.0";
+const expectedClassicVersion = "2.1.1";
+const expectedModernVersion = "2.1.1";
 
 function run(command, args) {
   childProcess.execFileSync(command, args, { stdio: "inherit", cwd: root });
@@ -38,11 +39,11 @@ for (const file of [
   }
 }
 
-for (const file of [
-  path.join(root, "classic", classicId + ".xml"),
-  path.join(root, "modern", modernId + ".xml"),
-  path.join(root, "classic", "config_template.xml"),
-  path.join(root, "modern", "config_template.xml")
+for (const [file, expectedVersion] of [
+  [path.join(root, "classic", classicId + ".xml"), expectedClassicVersion],
+  [path.join(root, "modern", modernId + ".xml"), expectedModernVersion],
+  [path.join(root, "classic", "config_template.xml"), expectedClassicVersion],
+  [path.join(root, "modern", "config_template.xml"), expectedModernVersion]
 ]) {
   const text = fs.readFileSync(file, "utf8");
   if (!text.includes(`version="${expectedVersion}"`)) {

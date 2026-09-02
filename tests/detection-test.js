@@ -370,6 +370,38 @@ async function modernTests() {
   assert.strictEqual(keyedSend.body.m.e[0].a, "keyed@example.org",
     "Modern must read an account configuration keyed by its exact Zimlet name");
 
+  const soapOrderedConfig = createModernHarness({ moveReportedMessage: "false" }, {
+    getAccount: () => ({
+      zimlets: [
+        {
+          name: "org_zimbracommunity_phishing_reporter_modern",
+          description: "Zimlet descriptor without runtime configuration",
+          include: ["index.js"]
+        },
+        {
+          zimletConfig: [{
+            name: "org_zimbracommunity_phishing_reporter_modern",
+            global: [{
+              property: [
+                { name: "internalReportAddress", _content: "soap-config@example.org" },
+                { name: "moveReportedMessage", _content: "false" }
+              ]
+            }]
+          }]
+        }
+      ]
+    })
+  });
+  soapOrderedConfig.click({
+    emailData: { messages: [{ id: "210", subject: "SOAP ordered config" }] }
+  });
+  await delay();
+  const soapOrderedSend = soapOrderedConfig.calls.find(call => call.name === "SendMsg");
+  assert(soapOrderedSend,
+    "Modern must continue past the descriptor and find the later SOAP configuration object");
+  assert.strictEqual(soapOrderedSend.body.m.e[0].a, "soap-config@example.org",
+    "Modern must read runtime properties from the later same-name SOAP object");
+
   let refetchAttempts = 0;
   let fallbackAttempts = 0;
   const refresh = createModernHarness({

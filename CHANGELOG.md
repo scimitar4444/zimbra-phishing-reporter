@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1] - 2026-09-02
+
+- fix Modern runtime configuration lookup when Zimbra returns a same-name descriptor before the configured Zimlet object
+- add a regression test for the descriptor-first account SOAP response
+- no reporting addresses or organization-specific settings are included in the packages
+- no functional change to the Classic reporting flow
+
 ## [2.1.0] - 2026-08-16
 
 - prevent conversation IDs from being submitted as message IDs
