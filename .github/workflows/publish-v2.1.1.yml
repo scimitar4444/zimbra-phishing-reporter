@@ -1,0 +1,119 @@
+name: Publish Zimbra Phishing Reporter 2.1.1
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: contains(github.event.head_commit.message, '[publish-v2.1.1]')
+    runs-on: ubuntu-latest
+    env:
+      TAG: v2.1.1
+      TARGET_SHA: 3cddae241edf5e231b8fc21626eec271fca272f5
+      CLASSIC_ZIP: dist/org_zimbracommunity_phishing_reporter_classic.zip
+      MODERN_ZIP: dist/org_zimbracommunity_phishing_reporter_modern.zip
+      SUMS_FILE: dist/SHA256SUMS
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release target, tests and package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse "${GITHUB_SHA}^")" = "$TARGET_SHA"
+          git cat-file -e "${TARGET_SHA}^{commit}"
+
+          node --check classic/org_zimbracommunity_phishing_reporter_classic.js
+          node --check modern/index.js
+          node tests/detection-test.js
+
+          (
+            cd dist
+            sha256sum -c SHA256SUMS
+            unzip -t org_zimbracommunity_phishing_reporter_classic.zip
+            unzip -t org_zimbracommunity_phishing_reporter_modern.zip
+          )
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          mkdir -p "$tmpdir/classic" "$tmpdir/modern"
+          unzip -q "$CLASSIC_ZIP" -d "$tmpdir/classic"
+          unzip -q "$MODERN_ZIP" -d "$tmpdir/modern"
+
+          for file in \
+            org_zimbracommunity_phishing_reporter_classic.properties \
+            org_zimbracommunity_phishing_reporter_classic_de.properties \
+            org_zimbracommunity_phishing_reporter_classic.xml \
+            org_zimbracommunity_phishing_reporter_classic.css \
+            org_zimbracommunity_phishing_reporter_classic.js \
+            shield-alert-16.png \
+            config_template.xml
+          do
+            cmp "classic/$file" "$tmpdir/classic/$file"
+          done
+
+          for file in \
+            org_zimbracommunity_phishing_reporter_modern.properties \
+            org_zimbracommunity_phishing_reporter_modern_de.properties \
+            org_zimbracommunity_phishing_reporter_modern.xml \
+            index.js \
+            config_template.xml
+          do
+            cmp "modern/$file" "$tmpdir/modern/$file"
+          done
+
+          grep -q 'version="2.1.1"' "$tmpdir/classic/org_zimbracommunity_phishing_reporter_classic.xml"
+          grep -q 'version="2.1.1"' "$tmpdir/modern/org_zimbracommunity_phishing_reporter_modern.xml"
+
+      - name: Create tag and GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$TARGET_SHA" -m "Zimbra Phishing Reporter 2.1.1"
+          git push origin "refs/tags/$TAG"
+
+          cat > /tmp/release-notes.md <<'EOF'
+          ## Zimbra Phishing Reporter 2.1.1
+
+          This bugfix release corrects Modern runtime configuration lookup when Zimbra returns a same-name descriptor before the configured Zimlet object.
+
+          ### Changed
+
+          - continue past descriptor-only entries while locating Modern runtime configuration
+          - prefer the same-name object that contains the requested configuration property
+          - add regression coverage for the descriptor-first SOAP response ordering
+          - keep the Classic reporting flow unchanged
+          - retain safe package defaults without recipients or organization-specific settings
+
+          ### Downloads
+
+          - Classic Zimlet package
+          - Modern Zimlet package
+          - `SHA256SUMS` for integrity verification
+          EOF
+
+          gh release create "$TAG" \
+            "$CLASSIC_ZIP" \
+            "$MODERN_ZIP" \
+            "$SUMS_FILE" \
+            --title "Zimbra Phishing Reporter 2.1.1" \
+            --notes-file /tmp/release-notes.md \
+            --verify-tag \
+            --repo "$GITHUB_REPOSITORY"
+
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
