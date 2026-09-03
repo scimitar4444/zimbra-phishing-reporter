@@ -28,7 +28,7 @@ Modern intentionally provides the action under **More → Report phishing**. A d
 
 ## Safe single and batch selection
 
-One or up to 10 unambiguously identified individual messages can be reported. A batch requires confirmation and every message is classified, sent and optionally moved separately in sequence. One failed message does not stop the remaining batch. The final notification shows reported, failed, not-moved and skipped counts.
+One or up to 10 unambiguously identified individual messages can be reported. A batch requires confirmation and every message is classified, sent and optionally moved separately in sequence. One failed message does not stop the remaining batch. The final notification shows reported, failed, not-moved and skipped counts and breaks accepted reports down into recognized simulations and internal reviews. It never includes subjects, senders or other message data.
 
 The Zimlet never submits a conversation ID as a message ID. When a selected conversation contains multiple messages and Zimbra does not expose the active individual message unambiguously, the selection is rejected before any report is sent. This prevents the first or another arbitrary message in a thread from being transmitted.
 

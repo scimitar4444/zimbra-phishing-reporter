@@ -41,11 +41,11 @@ den Release Notes muss dies ausdrücklich genannt werden.
 
 ## Release erzeugen
 
-Beispiel für Version 2.2.0:
+Beispiel für Version 2.2.1:
 
 ```bash
-git tag -a v2.2.0 -m "Zimbra Phishing Reporter 2.2.0"
-git push origin v2.2.0
+git tag -a v2.2.1 -m "Zimbra Phishing Reporter 2.2.1"
+git push origin v2.2.1
 ```
 
 Im GitHub-Release werden diese erzeugten Dateien aus `dist/` veröffentlicht:

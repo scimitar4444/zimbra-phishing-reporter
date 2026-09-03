@@ -155,7 +155,7 @@ async function classicTests() {
     simulationDetectionEnabled: "false",
     moveReportedMessage: "false",
     maxBatchMessages: "10",
-    batchSummaryMessage: "DONE {reported}/{failed}/{notMoved}/{skipped}"
+    batchSummaryMessage: "DONE {reported}/{failed}/{notMoved}/{skipped}/{simulation}/{internal}"
   });
   const classicRequests = [];
   batchHarness.sandbox.appCtxt = {
@@ -187,8 +187,45 @@ async function classicTests() {
     ["301", "302", "303"],
     "Classic must submit every selected message separately and continue after an item failure"
   );
-  assert(batchHarness.alerts.includes("DONE 2/1/0/0"),
+  assert(batchHarness.alerts.includes("DONE 2/1/0/0/0/2"),
     "Classic must show an aggregate batch result");
+
+  const classicRouted = loadClassic({
+    internalReportAddress: "security@example.org",
+    simulationReportAddress: "simulation@example.org",
+    simulationDetectionEnabled: "true",
+    simulationDisclaimerRules: "provider|simulation",
+    moveReportedMessage: "false",
+    batchSummaryMessage: "ROUTES {simulation}/{internal}"
+  });
+  classicRouted.handler._loadClassificationHeaders = function(messageId, successCallback) {
+    successCallback.run({
+      "x-disclaimer": [messageId === "307" ? "Provider simulation" : "ordinary message"]
+    });
+  };
+  const classicRouteRecipients = [];
+  classicRouted.sandbox.appCtxt = {
+    getAppController() {
+      return {
+        sendRequest(options) {
+          classicRouteRecipients.push(options.jsonObj.SendMsgRequest.m.e[0].a);
+          setTimeout(() => options.callback.run({}), 0);
+        },
+        setStatusMsg(message) { classicRouted.alerts.push(String(message)); }
+      };
+    }
+  };
+  classicRouted.sandbox.ZmStatusView = { LEVEL_INFO: "info" };
+  classicRouted.handler._reportListener({
+    getSelection: () => [
+      { isZmMailMsg: true, id: "306" },
+      { isZmMailMsg: true, id: "307" }
+    ]
+  });
+  await delay(30);
+  assert.deepStrictEqual(classicRouteRecipients, ["security@example.org", "simulation@example.org"]);
+  assert(classicRouted.alerts.includes("ROUTES 1/1"),
+    "Classic batch summary must distinguish simulation and internal routes");
 
   const lateHarness = loadClassic({
     internalReportAddress: "security@example.org",
@@ -361,7 +398,8 @@ async function modernTests() {
   const routedBatch = createModernHarness({
     ...baseConfig,
     simulationDetectionEnabled: "true",
-    simulationDisclaimerRules: "provider|simulation"
+    simulationDisclaimerRules: "provider|simulation",
+    batchSummaryMessage: "ROUTES {simulation}/{internal}"
   }, {
     jsonRequest(request) {
       if (request.name === "GetMsg") {
@@ -382,6 +420,8 @@ async function modernTests() {
     ["security@example.org", "simulation@example.org"],
     "each Modern batch item must retain its own internal or simulation route"
   );
+  assert(routedBatch.notifications.includes("ROUTES 1/1"),
+    "Modern batch summary must distinguish simulation and internal routes");
 
   const limitedBatch = createModernHarness({ ...baseConfig, maxBatchMessages: "2", batchLimitMessage: "MAX {maximum}" });
   limitedBatch.click({

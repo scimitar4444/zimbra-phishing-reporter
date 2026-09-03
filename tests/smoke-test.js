@@ -8,8 +8,8 @@ const childProcess = require("child_process");
 const root = path.resolve(__dirname, "..");
 const classicId = "org_zimbracommunity_phishing_reporter_classic";
 const modernId = "org_zimbracommunity_phishing_reporter_modern";
-const expectedClassicVersion = "2.2.0";
-const expectedModernVersion = "2.2.0";
+const expectedClassicVersion = "2.2.1";
+const expectedModernVersion = "2.2.1";
 
 function run(command, args) {
   childProcess.execFileSync(command, args, { stdio: "inherit", cwd: root });
@@ -61,7 +61,7 @@ for (const profile of [
       path.join(root, "config-examples", entry.name, name)))
 ]) {
   const text = fs.readFileSync(profile, "utf8");
-  if (!text.includes('version="2.2.0"') || !text.includes('name="maxBatchMessages"')) {
+  if (!text.includes('version="2.2.1"') || !text.includes('name="maxBatchMessages"')) {
     throw new Error(`Batch/version configuration missing in ${profile}`);
   }
 }

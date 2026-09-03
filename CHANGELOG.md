@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1] - 2026-09-03
+
+- show separate simulation and internal-review counts in Classic and Modern batch summaries
+- count only reports accepted by Zimbra in the route breakdown
+- keep message subjects, senders and other message data out of the summary
+- add mixed-route regression coverage for both web clients
+
 ## [2.2.0] - 2026-09-03
 
 - add confirmed batch reporting for up to 10 selected messages in Classic and Modern

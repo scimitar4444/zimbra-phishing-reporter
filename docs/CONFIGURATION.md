@@ -93,7 +93,7 @@ Button labels, subject prefixes, success and error messages are configurable.
 | `batchLimitMessage` | The configured batch limit was exceeded. Supports `{maximum}`. |
 | `batchConfirmationMessage` | Confirmation before a batch begins. Supports `{count}`. |
 | `batchProgressMessage` | Per-item progress. Supports `{current}` and `{total}`. |
-| `batchSummaryMessage` | Final counts. Supports `{reported}`, `{failed}`, `{notMoved}` and `{skipped}`. |
+| `batchSummaryMessage` | Final counts. Supports `{reported}`, `{simulation}`, `{internal}`, `{failed}`, `{notMoved}` and `{skipped}`. Route counts include only reports accepted by Zimbra. |
 | `alreadyReportedMessage` | The message was reported recently and remains under the time-limited duplicate-click guard. |
 | `sendErrorMessage` | Report submission failed. |
 | `sendTimeoutMessage` | Send confirmation timed out; the report might already have been sent. |

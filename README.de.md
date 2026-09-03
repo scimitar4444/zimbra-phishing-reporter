@@ -28,7 +28,7 @@ In **Modern** befindet sich die Aktion bewusst unter **Mehr → Phishing melden*
 
 ## Sichere Einzel- und Mehrfachauswahl
 
-Es können eine oder bis zu 10 eindeutig bestimmte einzelne Nachrichten gemeldet werden. Ein Stapel muss bestätigt werden; jede Nachricht wird nacheinander separat klassifiziert, gesendet und optional verschoben. Ein Fehler bei einer Nachricht stoppt die restliche Verarbeitung nicht. Die Abschlussmeldung nennt gemeldete, fehlgeschlagene, nicht verschobene und übersprungene Nachrichten.
+Es können eine oder bis zu 10 eindeutig bestimmte einzelne Nachrichten gemeldet werden. Ein Stapel muss bestätigt werden; jede Nachricht wird nacheinander separat klassifiziert, gesendet und optional verschoben. Ein Fehler bei einer Nachricht stoppt die restliche Verarbeitung nicht. Die Abschlussmeldung nennt gemeldete, fehlgeschlagene, nicht verschobene und übersprungene Nachrichten und teilt angenommene Meldungen zusätzlich in erkannte Simulationen und interne Prüfmeldungen auf. Betreff, Absender und andere Nachrichtendaten werden dabei nicht angezeigt.
 
 Eine Konversations-ID wird niemals als Nachrichten-ID verwendet. Enthält eine ausgewählte Unterhaltung mehrere Nachrichten und stellt Zimbra dem Zimlet die aktive Einzelnachricht nicht eindeutig bereit, wird die gesamte Auswahl vor dem Versand abgelehnt. Dadurch kann nicht versehentlich die erste oder eine andere Nachricht des Verlaufs übertragen werden.
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<zimletConfig name="org_zimbracommunity_phishing_reporter_modern" version="2.2.0">
+<zimletConfig name="org_zimbracommunity_phishing_reporter_modern" version="2.2.1">
     <global>
         <property name="internalReportAddress">phishing@example.org</property>
         <property name="simulationReportAddress"></property>
@@ -26,7 +26,7 @@
         <property name="batchLimitMessage">You can report at most {maximum} emails at once.</property>
         <property name="batchConfirmationMessage">Report {count} selected emails? Each email is sent as a separate report.</property>
         <property name="batchProgressMessage">Reporting email {current} of {total}...</property>
-        <property name="batchSummaryMessage">Batch complete: {reported} reported, {failed} failed, {notMoved} not moved, {skipped} skipped.</property>
+        <property name="batchSummaryMessage">Batch complete: {reported} reported ({simulation} simulations, {internal} internal reviews), {failed} failed, {notMoved} not moved, {skipped} skipped.</property>
         <property name="alreadyReportedMessage">This email was reported recently. Please wait before trying again.</property>
         <property name="missingMessageIdMessage">The message ID could not be determined.</property>
         <property name="noSubjectText">(no subject)</property>

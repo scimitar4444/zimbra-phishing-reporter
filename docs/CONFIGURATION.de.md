@@ -95,7 +95,7 @@ Buttonbeschriftung, Betreffpräfixe, Erfolgs- und Fehlermeldungen sind konfiguri
 | `batchLimitMessage` | Die konfigurierte Stapelgrenze wurde überschritten. Unterstützt `{maximum}`. |
 | `batchConfirmationMessage` | Rückfrage vor Beginn eines Stapels. Unterstützt `{count}`. |
 | `batchProgressMessage` | Fortschritt je Nachricht. Unterstützt `{current}` und `{total}`. |
-| `batchSummaryMessage` | Abschlusszahlen. Unterstützt `{reported}`, `{failed}`, `{notMoved}` und `{skipped}`. |
+| `batchSummaryMessage` | Abschlusszahlen. Unterstützt `{reported}`, `{simulation}`, `{internal}`, `{failed}`, `{notMoved}` und `{skipped}`. Die Routenzahlen enthalten nur von Zimbra angenommene Meldungen. |
 | `alreadyReportedMessage` | Die Nachricht wurde vor Kurzem gemeldet und ist noch durch den zeitlich begrenzten Doppelklickschutz gesperrt. |
 | `sendErrorMessage` | Versand der Meldung fehlgeschlagen. |
 | `sendTimeoutMessage` | Die Sendebestätigung ist abgelaufen; ein bereits erfolgter Versand ist möglich. |

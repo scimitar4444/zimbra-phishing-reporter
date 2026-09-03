@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Modern UI - Version 2.2.0 */
+/* Zimbra Phishing Reporter - Modern UI - Version 2.2.1 */
 (function () {
     "use strict";
 
@@ -937,11 +937,12 @@
             return result;
         }
 
-        function resultError(name, fallback, reference, reported, notMoved) {
+        function resultError(name, fallback, reference, reported, notMoved, routeType) {
             return {
                 reported: !!reported,
                 failed: !reported,
                 notMoved: !!notMoved,
+                routeType: routeType || "",
                 message: formatErrorMessage(name, fallback, reference)
             };
         }
@@ -989,6 +990,7 @@
                             failed: false,
                             notMoved: false,
                             moved: false,
+                            routeType: simulationMessage ? "simulation" : "internal",
                             message: route.successMessage
                         };
                     }
@@ -999,6 +1001,7 @@
                                 failed: false,
                                 notMoved: false,
                                 moved: true,
+                                routeType: simulationMessage ? "simulation" : "internal",
                                 message: route.successMessage
                             };
                         })
@@ -1010,7 +1013,8 @@
                                     "The report was sent, but moving the email took too long. You can move it manually.",
                                     "PR-MOVE-TIMEOUT",
                                     true,
-                                    true
+                                    true,
+                                    simulationMessage ? "simulation" : "internal"
                                 );
                             }
                             logError("PR-MOVE-01", moveError);
@@ -1019,7 +1023,8 @@
                                 "The email was reported but could not be moved.",
                                 "PR-MOVE-01",
                                 true,
-                                true
+                                true,
+                                simulationMessage ? "simulation" : "internal"
                             );
                         });
                 }).catch(function (sendError) {
@@ -1079,13 +1084,17 @@
                 if (item.reported) { summary.reported += 1; }
                 if (item.failed) { summary.failed += 1; }
                 if (item.notMoved) { summary.notMoved += 1; }
+                if (item.reported && item.routeType === "simulation") { summary.simulation += 1; }
+                if (item.reported && item.routeType === "internal") { summary.internal += 1; }
                 return summary;
-            }, { reported: 0, failed: 0, notMoved: 0 });
+            }, { reported: 0, failed: 0, notMoved: 0, simulation: 0, internal: 0 });
             notify(formatTemplate(readConfig(
                 "batchSummaryMessage",
-                "Batch complete: {reported} reported, {failed} failed, {notMoved} not moved, {skipped} skipped."
+                "Batch complete: {reported} reported ({simulation} simulations, {internal} internal reviews), {failed} failed, {notMoved} not moved, {skipped} skipped."
             ), {
                 reported: totals.reported,
+                simulation: totals.simulation,
+                internal: totals.internal,
                 failed: totals.failed,
                 notMoved: totals.notMoved,
                 skipped: skipped

@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Classic UI - Version 2.2.0 */
+/* Zimbra Phishing Reporter - Classic UI - Version 2.2.1 */
 
 function org_zimbracommunity_phishing_reporter_classic_HandlerObject() {
     this._busy = false;
@@ -7,6 +7,7 @@ function org_zimbracommunity_phishing_reporter_classic_HandlerObject() {
     this._pendingShouldMove = true;
     this._pendingTargetFolderId = "4";
     this._pendingSuccessMessage = "";
+    this._pendingRouteType = "";
     this._pendingPhase = "";
     this._pendingTimer = null;
     this._pendingToken = 0;
@@ -920,6 +921,7 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._sendRepor
     this._pendingAlreadyInTarget = String(message.folderId || message.l || "") ===
         this._pendingTargetFolderId;
     this._pendingSuccessMessage = route.successMessage;
+    this._pendingRouteType = isSimulation ? "simulation" : "internal";
     var requestToken = ++this._pendingToken;
     this._pendingPhase = "send";
     this._startPendingTimer(
@@ -967,6 +969,7 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._onReportA
             failed: false,
             notMoved: false,
             moved: false,
+            routeType: this._pendingRouteType,
             message: this._pendingSuccessMessage
         });
         return;
@@ -1016,6 +1019,7 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._onMoveSuc
         failed: false,
         notMoved: false,
         moved: true,
+        routeType: this._pendingRouteType,
         message: this._pendingSuccessMessage
     });
 };
@@ -1035,6 +1039,7 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._onMoveErr
         reported: true,
         failed: false,
         notMoved: true,
+        routeType: this._pendingRouteType,
         message: this._formatErrorMessage(
             "moveErrorMessage",
             "The email was reported but could not be moved.",
@@ -1091,6 +1096,7 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._onPending
             reported: true,
             failed: false,
             notMoved: true,
+            routeType: this._pendingRouteType,
             message: this._formatErrorMessage(
                 "moveTimeoutMessage",
                 "The report was sent, but moving the email took too long. You can move it manually.",
@@ -1147,17 +1153,25 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._finishBat
         }
         return;
     }
-    var totals = { reported: 0, failed: 0, notMoved: 0 };
+    var totals = { reported: 0, failed: 0, notMoved: 0, simulation: 0, internal: 0 };
     for (var i = 0; i < state.results.length; i++) {
         if (state.results[i].reported) { totals.reported += 1; }
         if (state.results[i].failed) { totals.failed += 1; }
         if (state.results[i].notMoved) { totals.notMoved += 1; }
+        if (state.results[i].reported && state.results[i].routeType === "simulation") {
+            totals.simulation += 1;
+        }
+        if (state.results[i].reported && state.results[i].routeType === "internal") {
+            totals.internal += 1;
+        }
     }
     this._setStatus(this._formatTemplate(this._getConfig(
         "batchSummaryMessage",
-        "Batch complete: {reported} reported, {failed} failed, {notMoved} not moved, {skipped} skipped."
+        "Batch complete: {reported} reported ({simulation} simulations, {internal} internal reviews), {failed} failed, {notMoved} not moved, {skipped} skipped."
     ), {
         reported: totals.reported,
+        simulation: totals.simulation,
+        internal: totals.internal,
         failed: totals.failed,
         notMoved: totals.notMoved,
         skipped: state.skipped
@@ -1193,6 +1207,7 @@ org_zimbracommunity_phishing_reporter_classic_HandlerObject.prototype._clearPend
     this._pendingShouldMove = true;
     this._pendingTargetFolderId = org_zimbracommunity_phishing_reporter_classic_HandlerObject.DEFAULT_TARGET_FOLDER_ID;
     this._pendingSuccessMessage = "";
+    this._pendingRouteType = "";
     this._pendingPhase = "";
 };
 
