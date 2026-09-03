@@ -13,8 +13,9 @@ The complete original message is submitted as an RFC822/EML attachment. Users do
 - configurable internal review mailbox
 - optional detection and separate routing of phishing simulations
 - optional Hornetsecurity example profile
+- confirmed multi-selection reporting for up to 10 individual messages
 - original message moved only after the report has been accepted
-- duplicate-report protection for the current browser session
+- time-limited duplicate-report protection per message
 - configurable notifications, errors and subject prefixes
 - stable support references without exposing internal server details
 - automated runtime, detection, package and syntax checks
@@ -25,11 +26,11 @@ Classic provides a direct action in the message toolbar.
 
 Modern intentionally provides the action under **More → Report phishing**. A direct Modern toolbar button was tested in the target environment but could not be integrated reliably. The Modern package therefore uses only the working action-menu extension point; direct toolbar integration is not an outstanding implementation item.
 
-## Unambiguous message selection
+## Safe single and batch selection
 
-The Zimlet reports only an unambiguously identified individual message. It never submits a conversation ID as a message ID.
+One or up to 10 unambiguously identified individual messages can be reported. A batch requires confirmation and every message is classified, sent and optionally moved separately in sequence. One failed message does not stop the remaining batch. The final notification shows reported, failed, not-moved and skipped counts.
 
-When a conversation contains multiple messages and Zimbra does not expose the active individual message unambiguously, the user is asked to open the suspicious email individually. This prevents the first or another arbitrary message in the thread from being transmitted.
+The Zimlet never submits a conversation ID as a message ID. When a selected conversation contains multiple messages and Zimbra does not expose the active individual message unambiguously, the selection is rejected before any report is sent. This prevents the first or another arbitrary message in a thread from being transmitted.
 
 ## Reporting workflow
 
@@ -148,6 +149,7 @@ Technical server details are not displayed in user dialogs. Administrators may e
 | `refreshTimeoutMs` | Maximum wait for list refresh, 10,000 ms by default. |
 | `operationTimeoutMs` | Hard limit for one complete reporting operation, 70,000 ms by default. |
 | `reportedMessageCooldownMs` | Time-limited duplicate-click guard per Zimbra message ID, 120,000 ms by default. |
+| `maxBatchMessages` | Maximum number of individually selected messages in one confirmed batch; default 10, hard maximum 25. |
 | `debugLogging` | Optional technical browser-console output. |
 
 See `docs/CONFIGURATION.md` for the complete reference.
@@ -187,6 +189,8 @@ Before broad deployment, test at least:
 
 - an individual message in Classic
 - an individual message in Modern through **More**
+- multiple individually selected messages in Classic and Modern
+- a partial batch failure followed by successful remaining items
 - a multi-message conversation followed by an individually opened message
 - a recognized simulation message
 - the normal internal reporting route

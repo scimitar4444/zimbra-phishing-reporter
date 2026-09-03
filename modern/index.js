@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Modern UI - Version 2.1.2 */
+/* Zimbra Phishing Reporter - Modern UI - Version 2.2.0 */
 (function () {
     "use strict";
 
@@ -14,6 +14,7 @@
         var DEFAULT_TARGET_FOLDER_ID = "4";
         var busy = false;
         var busySince = 0;
+        var busyUntil = 0;
         var reportedMessageIds = {};
 
         function notify(message) {
@@ -246,18 +247,18 @@
             });
         }
 
-        function setBusy(value) {
+        function setBusy(value, maximumDurationMs) {
             busy = !!value;
             busySince = busy ? nowMs() : 0;
+            busyUntil = busy ? busySince + (maximumDurationMs ||
+                readIntegerConfig("operationTimeoutMs", 70000, 1000, 300000) + 5000) : 0;
         }
 
         function isBusy() {
-            var maximumBusyMs;
             if (!busy) {
                 return false;
             }
-            maximumBusyMs = readIntegerConfig("operationTimeoutMs", 70000, 1000, 300000) + 5000;
-            if (!busySince || nowMs() - busySince > maximumBusyMs) {
+            if (!busySince || !busyUntil || nowMs() > busyUntil) {
                 setBusy(false);
                 return false;
             }
@@ -492,7 +493,7 @@
             return value;
         }
 
-        function resolveMessage(emailData) {
+        function resolveSingleMessage(emailData) {
             if (!emailData || typeof emailData !== "object") {
                 return null;
             }
@@ -519,6 +520,39 @@
             }
 
             return candidateMessage(emailData);
+        }
+
+        function resolveMessages(props) {
+            var emailData = props && props.emailData;
+            var selected = props && props.selectedMails;
+            var seen = {};
+            var messages = [];
+            var invalid = 0;
+
+            // The installed Zimbra Modern client passes the complete list selection
+            // as selectedMails. emailData remains the active/single mail.
+            if (Array.isArray(selected) && selected.length > 1) {
+                selected.forEach(function (item) {
+                    var message = candidateMessage(item);
+                    var id = message && String(message.id || message.nId || "");
+                    if (!message || !id) {
+                        invalid += 1;
+                        return;
+                    }
+                    if (!seen[id]) {
+                        seen[id] = true;
+                        messages.push(message);
+                    }
+                });
+                return { messages: messages, invalid: invalid };
+            }
+
+            var single = resolveSingleMessage(emailData) ||
+                (Array.isArray(selected) && selected.length === 1 ? candidateMessage(selected[0]) : null);
+            if (!single) {
+                return { messages: [], invalid: 1 };
+            }
+            return { messages: [single], invalid: 0 };
         }
 
         function phishingIcon() {
@@ -868,10 +902,6 @@
             });
         }
 
-        function finishFeedback(route) {
-            notify(route.successMessage);
-        }
-
         function formatErrorMessage(name, fallback, reference) {
             return readConfig(name, fallback) + "\n\n" +
                 readConfig("errorReferenceLabel", "Reference") + ": " + reference;
@@ -899,39 +929,34 @@
             } catch (ignoreErrorLog) {}
         }
 
-        function reportMessage(props) {
-            if (isBusy()) {
-                notify(readConfig("busyMessage", "The previous report is still being processed."));
-                return;
-            }
+        function formatTemplate(value, fields) {
+            var result = String(value || "");
+            Object.keys(fields || {}).forEach(function (name) {
+                result = result.split("{" + name + "}").join(String(fields[name]));
+            });
+            return result;
+        }
 
-            var message = resolveMessage(props && props.emailData);
-            var messageId = message && (message.id || message.nId);
-            if (!messageId) {
-                showDialog(readConfig(
-                    "selectOneMessageMessage",
-                    "Open the suspicious email individually and try again."
-                ));
-                return;
-            }
+        function resultError(name, fallback, reference, reported, notMoved) {
+            return {
+                reported: !!reported,
+                failed: !reported,
+                notMoved: !!notMoved,
+                message: formatErrorMessage(name, fallback, reference)
+            };
+        }
 
-            messageId = String(messageId);
-            pruneReportedMessageIds(nowMs());
-            if (reportedMessageIds[messageId]) {
-                notify(readConfig("alreadyReportedMessage", "This email was reported recently. Please wait before trying again."));
-                return;
-            }
-
-            var originalSubject = message.subject || (props.emailData && props.emailData.subject) ||
+        function processMessage(props, message) {
+            var messageId = String(message.id || message.nId || "");
+            var originalSubject = message.subject || message._subject ||
                 readConfig("noSubjectText", "(no subject)");
             var targetFolderId = readConfig("targetFolderId", DEFAULT_TARGET_FOLDER_ID);
             var shouldMove = readBooleanConfig("moveReportedMessage", true);
             var alreadyInTarget = String(message.folderId || message.l || "") === targetFolderId;
-            var listItemId = props && props.emailData && props.emailData.id;
+            var classification;
 
             reportedMessageIds[messageId] = nowMs();
-            setBusy(true);
-            var classification = readBooleanConfig("simulationDetectionEnabled", false) ?
+            classification = readBooleanConfig("simulationDetectionEnabled", false) ?
                 loadClassificationHeaders(messageId)
                     .then(function (headerMap) {
                         var matchReason = getSimulationMatchReason(headerMap);
@@ -940,100 +965,229 @@
                     })
                     .catch(function (classificationError) {
                         logError("PR-CLASSIFY-01", classificationError);
-                        // Classification failures must never block the internal reporting route.
                         return false;
                     }) :
                 Promise.resolve(false);
 
-            var operation = classification
-                .then(function (simulationMessage) {
-                    var route = getRoute(simulationMessage);
-                    if (!route.recipient) {
-                        var configurationError = new Error(route.error);
-                        configurationError.reporterConfigurationError = true;
-                        throw configurationError;
-                    }
+            var operation = classification.then(function (simulationMessage) {
+                var route = getRoute(simulationMessage);
+                if (!route.recipient) {
+                    delete reportedMessageIds[messageId];
+                    return {
+                        reported: false,
+                        failed: true,
+                        notMoved: false,
+                        message: route.error
+                    };
+                }
 
-                    return sendReport(messageId, originalSubject, route)
-                        .then(function () {
-                            reportedMessageIds[messageId] = nowMs();
-                            if (!shouldMove || alreadyInTarget) {
-                                finishFeedback(route);
-                                return null;
-                            }
-                            return moveToTarget(props, messageId, listItemId, targetFolderId)
-                                .then(function () { return refreshMessageList(); })
-                                .then(function () { finishFeedback(route); })
-                                .catch(function (moveError) {
-                                    if (moveError && moveError.reporterTimeoutPhase === "move") {
-                                        logError("PR-MOVE-TIMEOUT", moveError);
-                                        showDialog(formatErrorMessage(
-                                            "moveTimeoutMessage",
-                                            "The report was sent, but moving the email took too long. You can move it manually.",
-                                            "PR-MOVE-TIMEOUT"
-                                        ));
-                                        return;
-                                    }
-                                    logError("PR-MOVE-01", moveError);
-                                    showDialog(formatErrorMessage(
-                                        "moveErrorMessage",
-                                        "The email was reported but could not be moved.",
-                                        "PR-MOVE-01"
-                                    ));
-                                });
-                        });
-                })
-                .catch(function (sendError) {
-                    if (sendError && sendError.reporterConfigurationError) {
-                        delete reportedMessageIds[messageId];
-                        showDialog(sendError.message);
-                        return;
+                return sendReport(messageId, originalSubject, route).then(function () {
+                    reportedMessageIds[messageId] = nowMs();
+                    if (!shouldMove || alreadyInTarget) {
+                        return {
+                            reported: true,
+                            failed: false,
+                            notMoved: false,
+                            moved: false,
+                            message: route.successMessage
+                        };
                     }
+                    return moveToTarget(props, messageId, messageId, targetFolderId)
+                        .then(function () {
+                            return {
+                                reported: true,
+                                failed: false,
+                                notMoved: false,
+                                moved: true,
+                                message: route.successMessage
+                            };
+                        })
+                        .catch(function (moveError) {
+                            if (moveError && moveError.reporterTimeoutPhase === "move") {
+                                logError("PR-MOVE-TIMEOUT", moveError);
+                                return resultError(
+                                    "moveTimeoutMessage",
+                                    "The report was sent, but moving the email took too long. You can move it manually.",
+                                    "PR-MOVE-TIMEOUT",
+                                    true,
+                                    true
+                                );
+                            }
+                            logError("PR-MOVE-01", moveError);
+                            return resultError(
+                                "moveErrorMessage",
+                                "The email was reported but could not be moved.",
+                                "PR-MOVE-01",
+                                true,
+                                true
+                            );
+                        });
+                }).catch(function (sendError) {
                     if (sendError && sendError.reporterTimeoutPhase === "send") {
                         reportedMessageIds[messageId] = nowMs();
                         logError("PR-SEND-TIMEOUT", sendError);
-                        showDialog(formatErrorMessage(
+                        return resultError(
                             "sendTimeoutMessage",
                             "The server response took too long. The report may still have been sent. Please wait before trying again.",
-                            "PR-SEND-TIMEOUT"
-                        ));
-                        return;
+                            "PR-SEND-TIMEOUT",
+                            false,
+                            false
+                        );
                     }
                     delete reportedMessageIds[messageId];
                     logError("PR-SEND-01", sendError);
-                    showDialog(formatErrorMessage(
+                    return resultError(
                         "sendErrorMessage",
                         "The email could not be reported and was not moved.",
-                        "PR-SEND-01"
-                    ));
+                        "PR-SEND-01",
+                        false,
+                        false
+                    );
                 });
+            });
 
-            operation = withOperationTimeout(
+            return withOperationTimeout(
                 operation,
                 readIntegerConfig("operationTimeoutMs", 70000, 1000, 300000),
                 "overall"
-            );
-
-            operation.then(function () {
-                setBusy(false);
-            }, function (unexpectedError) {
-                setBusy(false);
+            ).catch(function (unexpectedError) {
                 reportedMessageIds[messageId] = nowMs();
                 if (unexpectedError && unexpectedError.reporterTimeoutPhase === "overall") {
                     logError("PR-TIMEOUT-01", unexpectedError);
-                    showDialog(formatErrorMessage(
+                    return resultError(
                         "operationTimeoutMessage",
                         "Reporting took too long. The operation was released; the report may still have been sent. Please wait before trying again.",
-                        "PR-TIMEOUT-01"
-                    ));
-                    return;
+                        "PR-TIMEOUT-01",
+                        false,
+                        false
+                    );
                 }
+                delete reportedMessageIds[messageId];
                 logError("PR-UNEXPECTED-01", unexpectedError);
-                showDialog(formatErrorMessage(
+                return resultError(
                     "sendErrorMessage",
                     "The email could not be reported and was not moved.",
-                    "PR-UNEXPECTED-01"
+                    "PR-UNEXPECTED-01",
+                    false,
+                    false
+                );
+            });
+        }
+
+        function showBatchSummary(results, skipped) {
+            var totals = results.reduce(function (summary, item) {
+                if (item.reported) { summary.reported += 1; }
+                if (item.failed) { summary.failed += 1; }
+                if (item.notMoved) { summary.notMoved += 1; }
+                return summary;
+            }, { reported: 0, failed: 0, notMoved: 0 });
+            notify(formatTemplate(readConfig(
+                "batchSummaryMessage",
+                "Batch complete: {reported} reported, {failed} failed, {notMoved} not moved, {skipped} skipped."
+            ), {
+                reported: totals.reported,
+                failed: totals.failed,
+                notMoved: totals.notMoved,
+                skipped: skipped
+            }));
+        }
+
+        function reportMessage(props) {
+            if (isBusy()) {
+                notify(readConfig("busyMessage", "The previous report is still being processed."));
+                return;
+            }
+
+            var selection = resolveMessages(props);
+            var messages = selection.messages;
+            var maximum = readIntegerConfig("maxBatchMessages", 10, 1, 25);
+            if (!messages.length || selection.invalid) {
+                showDialog(readConfig(
+                    "unsupportedSelectionMessage",
+                    readConfig(
+                        "selectOneMessageMessage",
+                        "Select individual email messages. Conversations containing multiple emails cannot be reported as a batch."
+                    )
                 ));
+                return;
+            }
+            if (messages.length > maximum) {
+                showDialog(formatTemplate(readConfig(
+                    "batchLimitMessage",
+                    "You can report at most {maximum} emails at once."
+                ), { maximum: maximum }));
+                return;
+            }
+            if (messages.length > 1 && typeof window.confirm === "function" &&
+                    !window.confirm(formatTemplate(readConfig(
+                        "batchConfirmationMessage",
+                        "Report {count} selected emails? Each email is sent as a separate report."
+                    ), { count: messages.length }))) {
+                return;
+            }
+
+            pruneReportedMessageIds(nowMs());
+            var skipped = 0;
+            messages = messages.filter(function (message) {
+                var id = String(message.id || message.nId || "");
+                if (!id || reportedMessageIds[id]) {
+                    skipped += 1;
+                    return false;
+                }
+                return true;
+            });
+            if (!messages.length) {
+                notify(readConfig("alreadyReportedMessage", "The selected email was reported recently. Please wait before trying again."));
+                return;
+            }
+
+            var batchMode = messages.length + skipped > 1;
+            var results = [];
+            var chain = Promise.resolve();
+            setBusy(true, messages.length *
+                readIntegerConfig("operationTimeoutMs", 70000, 1000, 300000) + 5000);
+            messages.forEach(function (message, index) {
+                chain = chain.then(function () {
+                    if (batchMode) {
+                        notify(formatTemplate(readConfig(
+                            "batchProgressMessage",
+                            "Reporting email {current} of {total}..."
+                        ), { current: index + 1, total: messages.length }));
+                    }
+                    return processMessage(props, message);
+                }).then(function (result) {
+                    results.push(result);
+                });
+            });
+
+            chain.then(function () {
+                if (results.some(function (result) { return result.moved; })) {
+                    return refreshMessageList();
+                }
+                return null;
+            }).then(function () {
+                setBusy(false);
+                if (batchMode) {
+                    showBatchSummary(results, skipped);
+                    return;
+                }
+                if (results[0] && results[0].reported && !results[0].notMoved) {
+                    notify(results[0].message);
+                } else if (results[0]) {
+                    showDialog(results[0].message);
+                }
+            }, function (unexpectedError) {
+                setBusy(false);
+                logError("PR-BATCH-01", unexpectedError);
+                if (batchMode) {
+                    showBatchSummary(results.concat([{ failed: true }]), skipped);
+                } else {
+                    showDialog(formatErrorMessage(
+                        "sendErrorMessage",
+                        "The email could not be reported and was not moved.",
+                        "PR-BATCH-01"
+                    ));
+                }
             });
         }
 

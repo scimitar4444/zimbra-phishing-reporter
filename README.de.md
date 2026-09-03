@@ -13,8 +13,9 @@ Die vollständige Originalnachricht wird als RFC822-/EML-Anhang an eine konfigur
 - konfigurierbares internes Prüfpostfach
 - optionale Erkennung und getrennte Weiterleitung von Phishing-Simulationen
 - optionale Hornetsecurity-Beispielkonfiguration
+- bestätigte Mehrfachauswahl für bis zu 10 einzelne Nachrichten
 - Verschieben der Originalmail erst nach erfolgreicher Annahme der Meldung
-- Schutz vor doppelter Meldung derselben Nachricht innerhalb einer Browsersitzung
+- zeitlich begrenzter Schutz vor doppelter Meldung je Nachricht
 - konfigurierbare Hinweise, Fehlermeldungen und Betreffpräfixe
 - technische Fehlercodes ohne Offenlegung interner Serverdetails
 - automatisierte Laufzeit-, Erkennungs-, Paket- und Syntaxprüfungen
@@ -25,15 +26,11 @@ In **Classic** erscheint eine direkte Schaltfläche in der Nachrichten-Toolbar.
 
 In **Modern** befindet sich die Aktion bewusst unter **Mehr → Phishing melden**. Ein direkter Toolbar-Button wurde in der Zielumgebung erprobt, ließ sich dort aber nicht zuverlässig integrieren. Die Modern-Variante verwendet deshalb ausschließlich den funktionierenden Menü-Erweiterungspunkt; dies ist kein noch offener Implementierungspunkt.
 
-## Eindeutige Nachrichtenauswahl
+## Sichere Einzel- und Mehrfachauswahl
 
-Das Zimlet meldet ausschließlich eine eindeutig bestimmte einzelne Nachricht. Eine Konversations-ID wird niemals als Nachrichten-ID verwendet.
+Es können eine oder bis zu 10 eindeutig bestimmte einzelne Nachrichten gemeldet werden. Ein Stapel muss bestätigt werden; jede Nachricht wird nacheinander separat klassifiziert, gesendet und optional verschoben. Ein Fehler bei einer Nachricht stoppt die restliche Verarbeitung nicht. Die Abschlussmeldung nennt gemeldete, fehlgeschlagene, nicht verschobene und übersprungene Nachrichten.
 
-Enthält eine Unterhaltung mehrere Nachrichten und stellt Zimbra dem Zimlet die gerade aktive Einzelmail nicht eindeutig bereit, erscheint der Hinweis:
-
-> Bitte öffnen Sie die verdächtige E-Mail einzeln und versuchen Sie es erneut.
-
-Damit wird verhindert, dass versehentlich die erste oder eine andere Nachricht aus derselben Unterhaltung übertragen wird.
+Eine Konversations-ID wird niemals als Nachrichten-ID verwendet. Enthält eine ausgewählte Unterhaltung mehrere Nachrichten und stellt Zimbra dem Zimlet die aktive Einzelnachricht nicht eindeutig bereit, wird die gesamte Auswahl vor dem Versand abgelehnt. Dadurch kann nicht versehentlich die erste oder eine andere Nachricht des Verlaufs übertragen werden.
 
 ## Ablauf einer Meldung
 
@@ -152,6 +149,7 @@ Technische Fehlerdetails werden standardmäßig nicht im Dialog angezeigt. Mit `
 | `refreshTimeoutMs` | Maximale Wartezeit auf die Listenaktualisierung, standardmäßig 10.000 ms. |
 | `operationTimeoutMs` | Harte Obergrenze für einen vollständigen Meldevorgang, standardmäßig 70.000 ms. |
 | `reportedMessageCooldownMs` | Zeitlich begrenzter Doppelklickschutz je Zimbra-Nachrichten-ID, standardmäßig 120.000 ms. |
+| `maxBatchMessages` | Maximale Anzahl einzeln ausgewählter Nachrichten pro bestätigtem Stapel; Standard 10, technische Obergrenze 25. |
 | `debugLogging` | Optionale technische Browserkonsolen-Ausgaben. |
 
 Die vollständige Beschreibung steht in `docs/CONFIGURATION.de.md`.
@@ -191,6 +189,8 @@ Vor einer breiten Verteilung sollten mindestens folgende Fälle mit einem Testko
 
 - einzelne Mail in Classic
 - einzelne Mail in Modern über **Mehr**
+- mehrere einzeln ausgewählte Nachrichten in Classic und Modern
+- Teilfehler im Stapel mit erfolgreicher Weiterverarbeitung der übrigen Nachrichten
 - mehrteilige Unterhaltung und anschließend einzeln geöffnete Mail
 - erkannte Simulationsmail
 - normale interne Melderoute

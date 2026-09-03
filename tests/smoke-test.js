@@ -8,8 +8,8 @@ const childProcess = require("child_process");
 const root = path.resolve(__dirname, "..");
 const classicId = "org_zimbracommunity_phishing_reporter_classic";
 const modernId = "org_zimbracommunity_phishing_reporter_modern";
-const expectedClassicVersion = "2.1.1";
-const expectedModernVersion = "2.1.2";
+const expectedClassicVersion = "2.2.0";
+const expectedModernVersion = "2.2.0";
 
 function run(command, args) {
   childProcess.execFileSync(command, args, { stdio: "inherit", cwd: root });
@@ -52,6 +52,20 @@ for (const [file, expectedVersion] of [
   }
 }
 
+for (const profile of [
+  path.join(root, "classic", "config_template.xml"),
+  path.join(root, "modern", "config_template.xml"),
+  ...fs.readdirSync(path.join(root, "config-examples"), { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .flatMap(entry => ["classic.xml", "modern.xml"].map(name =>
+      path.join(root, "config-examples", entry.name, name)))
+]) {
+  const text = fs.readFileSync(profile, "utf8");
+  if (!text.includes('version="2.2.0"') || !text.includes('name="maxBatchMessages"')) {
+    throw new Error(`Batch/version configuration missing in ${profile}`);
+  }
+}
+
 for (const [zipName, required] of [
   [classicId + ".zip", [classicId + ".xml", classicId + ".js", "config_template.xml"]],
   [modernId + ".zip", [modernId + ".xml", "index.js", "config_template.xml"]]
@@ -61,6 +75,14 @@ for (const [zipName, required] of [
     if (!listing.replace(/\r/g, "").trim().split("\n").includes(entry)) {
       throw new Error(`Missing ${entry} in ${zipName}`);
     }
+  }
+
+  const sourceName = zipName.startsWith(classicId) ? classicId + ".js" : "index.js";
+  const sourcePath = zipName.startsWith(classicId) ?
+    path.join(root, "classic", sourceName) : path.join(root, "modern", sourceName);
+  const archivedSource = childProcess.execFileSync("unzip", ["-p", path.join(root, "dist", zipName), sourceName]);
+  if (!archivedSource.equals(fs.readFileSync(sourcePath))) {
+    throw new Error(`Packaged source differs from ${sourcePath}`);
   }
 }
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0] - 2026-09-03
+
+- add confirmed batch reporting for up to 10 selected messages in Classic and Modern
+- send, classify and optionally move every selected message independently and sequentially
+- preserve the separate simulation and internal routes for every item
+- continue processing after an individual send or move failure
+- show per-item progress and a final reported/failed/not-moved/skipped summary
+- reject ambiguous conversations and oversized batches before sending
+- add send and move timeouts plus a time-limited duplicate guard to Classic
+- refresh the Modern message list once after a completed batch
+- add regression coverage for Classic and Modern batches, partial failure, limits and mixed routing
+
 ## [2.1.2] - 2026-09-03
 
 - bound Modern `SendMsg`, move, refresh and complete report operations with configurable timeouts

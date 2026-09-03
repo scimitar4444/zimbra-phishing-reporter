@@ -37,6 +37,7 @@ The original message is moved only after Zimbra accepts the report message. A fa
 | `refreshTimeoutMs` | Maximum wait for refreshing the message list. Default: `10000`. |
 | `operationTimeoutMs` | Hard limit for the complete Modern reporting operation. Default: `70000`. |
 | `reportedMessageCooldownMs` | Time-limited duplicate-click guard per Zimbra message ID. Default: `120000`. |
+| `maxBatchMessages` | Maximum messages per confirmed batch. Default: `10`; values are clamped to 1–25. |
 
 The Zimlet does not modify messages or add headers. It only evaluates headers already present on the message.
 
@@ -68,8 +69,11 @@ When classification fails or times out, the message is submitted to the internal
 The Zimlet requires a real message ID. Conversation IDs are rejected.
 
 - An unambiguously opened or selected individual message can be reported.
+- Up to `maxBatchMessages` individually selected messages can be confirmed and processed as a batch.
+- Every batch item is classified, reported and optionally moved separately and sequentially.
+- An item failure does not stop the remaining messages. The final summary reports successful, failed, not-moved and skipped counts.
 - When a thread contains several messages and no active individual message is exposed unambiguously, the user must open the relevant message individually.
-- Multiple selected messages are not submitted together.
+- A batch containing an ambiguous conversation is rejected before any message is sent.
 
 ## User interface
 
@@ -85,6 +89,11 @@ Button labels, subject prefixes, success and error messages are configurable.
 |---|---|
 | `busyMessage` | A report is already being processed. |
 | `selectOneMessageMessage` | No unambiguous individual message is available. |
+| `unsupportedSelectionMessage` | The selection contains an ambiguous or unsupported item. |
+| `batchLimitMessage` | The configured batch limit was exceeded. Supports `{maximum}`. |
+| `batchConfirmationMessage` | Confirmation before a batch begins. Supports `{count}`. |
+| `batchProgressMessage` | Per-item progress. Supports `{current}` and `{total}`. |
+| `batchSummaryMessage` | Final counts. Supports `{reported}`, `{failed}`, `{notMoved}` and `{skipped}`. |
 | `alreadyReportedMessage` | The message was reported recently and remains under the time-limited duplicate-click guard. |
 | `sendErrorMessage` | Report submission failed. |
 | `sendTimeoutMessage` | Send confirmation timed out; the report might already have been sent. |

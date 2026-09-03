@@ -41,7 +41,7 @@ function loadClassic(config, XMLHttpRequestImpl) {
   return { handler, alerts, sandbox };
 }
 
-function classicTests() {
+async function classicTests() {
   const config = {
     simulationDetectionEnabled: "true",
     simulationDisclaimerHeader: "X-Disclaimer",
@@ -149,6 +149,77 @@ function classicTests() {
   });
   assert.strictEqual(successCount, 1, "raw-header callback must run exactly once");
   assert.strictEqual(errorCount, 0, "a late XHR error must not trigger a second completion path");
+
+  const batchHarness = loadClassic({
+    internalReportAddress: "security@example.org",
+    simulationDetectionEnabled: "false",
+    moveReportedMessage: "false",
+    maxBatchMessages: "10",
+    batchSummaryMessage: "DONE {reported}/{failed}/{notMoved}/{skipped}"
+  });
+  const classicRequests = [];
+  batchHarness.sandbox.appCtxt = {
+    getAppController() {
+      return {
+        sendRequest(options) {
+          classicRequests.push(options.jsonObj);
+          const callNumber = classicRequests.length;
+          setTimeout(() => {
+            if (callNumber === 2) options.errorCallback.run(new Error("synthetic failure"));
+            else options.callback.run({});
+          }, 0);
+        },
+        setStatusMsg(message) { batchHarness.alerts.push(String(message)); }
+      };
+    }
+  };
+  batchHarness.sandbox.ZmStatusView = { LEVEL_INFO: "info" };
+  batchHarness.handler._reportListener({
+    getSelection: () => [
+      { isZmMailMsg: true, id: "301", subject: "one" },
+      { isZmMailMsg: true, id: "302", subject: "two" },
+      { isZmMailMsg: true, id: "303", subject: "three" }
+    ]
+  });
+  await delay(30);
+  assert.deepStrictEqual(
+    classicRequests.map(request => request.SendMsgRequest.m.attach.m[0].id),
+    ["301", "302", "303"],
+    "Classic must submit every selected message separately and continue after an item failure"
+  );
+  assert(batchHarness.alerts.includes("DONE 2/1/0/0"),
+    "Classic must show an aggregate batch result");
+
+  const lateHarness = loadClassic({
+    internalReportAddress: "security@example.org",
+    simulationDetectionEnabled: "false",
+    moveReportedMessage: "false",
+    sendTimeoutMs: "100",
+    batchSummaryMessage: "LATE {reported}/{failed}"
+  });
+  let lateCalls = 0;
+  lateHarness.sandbox.appCtxt = {
+    getAppController() {
+      return {
+        sendRequest(options) {
+          lateCalls += 1;
+          setTimeout(() => options.callback.run({}), lateCalls === 1 ? 130 : 60);
+        },
+        setStatusMsg(message) { lateHarness.alerts.push(String(message)); }
+      };
+    }
+  };
+  lateHarness.sandbox.ZmStatusView = { LEVEL_INFO: "info" };
+  lateHarness.handler._reportListener({
+    getSelection: () => [
+      { isZmMailMsg: true, id: "304", subject: "slow" },
+      { isZmMailMsg: true, id: "305", subject: "fast" }
+    ]
+  });
+  await delay(230);
+  assert.strictEqual(lateCalls, 2, "Classic must continue after a send timeout");
+  assert(lateHarness.alerts.includes("LATE 1/1"),
+    "a late Classic callback must not complete the following batch item");
 }
 
 function createModernHarness(config, options = {}) {
@@ -264,6 +335,60 @@ async function modernTests() {
   assert.deepStrictEqual(positiveConversation.alerts, ["OPEN_ONE"]);
   assert.strictEqual(positiveConversation.calls.length, 0,
     "Modern must reject a positive conversation ID without an explicit active message");
+
+  const batch = createModernHarness({
+    ...baseConfig,
+    batchSummaryMessage: "DONE {reported}/{failed}/{notMoved}/{skipped}"
+  });
+  batch.click({
+    emailData: null,
+    selectedMails: [
+      { id: "211", subject: "one" },
+      { id: "212", subject: "two" },
+      { id: "213", subject: "three" }
+    ]
+  });
+  await delay(10);
+  assert.deepStrictEqual(
+    batch.calls.filter(call => call.name === "SendMsg")
+      .map(call => call.body.m.attach.m[0].id),
+    ["211", "212", "213"],
+    "Modern must submit each selectedMails entry as an individual report"
+  );
+  assert(batch.notifications.includes("DONE 3/0/0/0"),
+    "Modern must show an aggregate batch result");
+
+  const routedBatch = createModernHarness({
+    ...baseConfig,
+    simulationDetectionEnabled: "true",
+    simulationDisclaimerRules: "provider|simulation"
+  }, {
+    jsonRequest(request) {
+      if (request.name === "GetMsg") {
+        return {
+          header: [{
+            n: "X-Disclaimer",
+            _content: request.body.m.id === "218" ? "Provider simulation" : "ordinary message"
+          }]
+        };
+      }
+      return {};
+    }
+  });
+  routedBatch.click({ selectedMails: [{ id: "217" }, { id: "218" }] });
+  await delay(10);
+  assert.deepStrictEqual(
+    routedBatch.calls.filter(call => call.name === "SendMsg").map(call => call.body.m.e[0].a),
+    ["security@example.org", "simulation@example.org"],
+    "each Modern batch item must retain its own internal or simulation route"
+  );
+
+  const limitedBatch = createModernHarness({ ...baseConfig, maxBatchMessages: "2", batchLimitMessage: "MAX {maximum}" });
+  limitedBatch.click({
+    selectedMails: [{ id: "214" }, { id: "215" }, { id: "216" }]
+  });
+  assert.deepStrictEqual(limitedBatch.alerts, ["MAX 2"]);
+  assert.strictEqual(limitedBatch.calls.length, 0, "Modern must reject an oversized batch before sending");
 
   const single = createModernHarness(baseConfig);
   single.click({ emailData: { id: "-21", messages: [{ id: "203", subject: "Test" }] } });
@@ -430,7 +555,7 @@ async function modernTests() {
 }
 
 (async () => {
-  classicTests();
+  await classicTests();
   await modernTests();
   console.log("Detection and runtime tests passed.");
 })().catch(error => {

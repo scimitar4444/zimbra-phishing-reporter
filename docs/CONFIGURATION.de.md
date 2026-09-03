@@ -37,6 +37,7 @@ Die Originalnachricht wird erst verschoben, nachdem Zimbra die Meldemail angenom
 | `refreshTimeoutMs` | Maximale Wartezeit auf die Aktualisierung der Nachrichtenliste. Standard: `10000`. |
 | `operationTimeoutMs` | Harte Obergrenze für den vollständigen Modern-Meldevorgang. Standard: `70000`. |
 | `reportedMessageCooldownMs` | Zeitlich begrenzter Doppelklickschutz je Zimbra-Nachrichten-ID. Standard: `120000`. |
+| `maxBatchMessages` | Maximale Nachrichtenanzahl pro bestätigtem Stapel. Standard: `10`; Werte werden auf 1 bis 25 begrenzt. |
 
 Das Zimlet verändert keine Mail und setzt keine Header. Es wertet ausschließlich Header aus, die bereits in der Nachricht vorhanden sind.
 
@@ -70,8 +71,11 @@ Schlägt die Klassifizierung fehl oder läuft sie ab, wird die Nachricht sicherh
 Das Zimlet benötigt eine echte Nachrichten-ID. Konversations-IDs werden verworfen.
 
 - Eine eindeutig geöffnete oder markierte Einzelmail kann gemeldet werden.
+- Bis zu `maxBatchMessages` einzeln markierte Nachrichten können bestätigt und als Stapel verarbeitet werden.
+- Jede Nachricht wird nacheinander separat klassifiziert, gemeldet und optional verschoben.
+- Ein Einzelfehler stoppt die restlichen Nachrichten nicht. Die Abschlussmeldung nennt erfolgreiche, fehlgeschlagene, nicht verschobene und übersprungene Nachrichten.
 - Enthält eine Unterhaltung mehrere Nachrichten und ist keine aktive Einzelmail eindeutig ermittelbar, muss der Nutzer die betreffende Mail einzeln öffnen.
-- Mehrere markierte Nachrichten werden nicht gemeinsam gemeldet.
+- Ein Stapel mit einer mehrdeutigen Unterhaltung wird vollständig abgelehnt, bevor eine Meldung versendet wird.
 
 ## Oberfläche
 
@@ -87,6 +91,11 @@ Buttonbeschriftung, Betreffpräfixe, Erfolgs- und Fehlermeldungen sind konfiguri
 |---|---|
 | `busyMessage` | Eine Meldung wird bereits verarbeitet. |
 | `selectOneMessageMessage` | Keine eindeutig bestimmte Einzelmail verfügbar. |
+| `unsupportedSelectionMessage` | Die Auswahl enthält ein mehrdeutiges oder nicht unterstütztes Element. |
+| `batchLimitMessage` | Die konfigurierte Stapelgrenze wurde überschritten. Unterstützt `{maximum}`. |
+| `batchConfirmationMessage` | Rückfrage vor Beginn eines Stapels. Unterstützt `{count}`. |
+| `batchProgressMessage` | Fortschritt je Nachricht. Unterstützt `{current}` und `{total}`. |
+| `batchSummaryMessage` | Abschlusszahlen. Unterstützt `{reported}`, `{failed}`, `{notMoved}` und `{skipped}`. |
 | `alreadyReportedMessage` | Die Nachricht wurde vor Kurzem gemeldet und ist noch durch den zeitlich begrenzten Doppelklickschutz gesperrt. |
 | `sendErrorMessage` | Versand der Meldung fehlgeschlagen. |
 | `sendTimeoutMessage` | Die Sendebestätigung ist abgelaufen; ein bereits erfolgter Versand ist möglich. |
