@@ -1,0 +1,61 @@
+name: Publish Zimbra Phishing Reporter 2.2.1
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.event.head_commit.message == '[publish-v2.2.1] Publish Zimbra Phishing Reporter 2.2.1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release source
+        env:
+          RELEASE_COMMIT: 5de8fe35d10a8c830dcbd3cbcc3c4ef4a2e89317
+        run: |
+          test "$(git rev-parse HEAD^)" = "$RELEASE_COMMIT"
+          test ! -e .git/refs/tags/v2.2.1
+          node --check classic/org_zimbracommunity_phishing_reporter_classic.js
+          node --check modern/index.js
+          node tests/detection-test.js
+          node tests/smoke-test.js
+          (cd dist && sha256sum -c SHA256SUMS)
+          unzip -p dist/org_zimbracommunity_phishing_reporter_classic.zip org_zimbracommunity_phishing_reporter_classic.js > /tmp/classic.js
+          unzip -p dist/org_zimbracommunity_phishing_reporter_modern.zip index.js > /tmp/modern.js
+          cmp classic/org_zimbracommunity_phishing_reporter_classic.js /tmp/classic.js
+          cmp modern/index.js /tmp/modern.js
+          grep -F 'version="2.2.1"' classic/org_zimbracommunity_phishing_reporter_classic.xml
+          grep -F 'version="2.2.1"' modern/org_zimbracommunity_phishing_reporter_modern.xml
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT: 5de8fe35d10a8c830dcbd3cbcc3c4ef4a2e89317
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a v2.2.1 "$RELEASE_COMMIT" -m "Zimbra Phishing Reporter 2.2.1"
+          git push origin refs/tags/v2.2.1
+          cat > /tmp/release-notes.md <<'NOTES'
+          ## Zimbra Phishing Reporter 2.2.1
+
+          This patch improves the multi-selection result shown in both Zimbra Classic and Modern.
+
+          - The batch summary now shows recognized simulation and internal-review counts separately
+          - Route counts include only reports accepted by Zimbra
+          - Single-message simulation feedback remains unchanged
+          - Subjects, senders and other message data are not included in the summary
+          - Mixed-route regression tests cover both web clients
+          - No reporting addresses or organization-specific production data are included
+
+          Verify downloads with the attached `SHA256SUMS`.
+          NOTES
+          gh release create v2.2.1             dist/org_zimbracommunity_phishing_reporter_classic.zip             dist/org_zimbracommunity_phishing_reporter_modern.zip             dist/SHA256SUMS             --title "Zimbra Phishing Reporter 2.2.1"             --notes-file /tmp/release-notes.md
