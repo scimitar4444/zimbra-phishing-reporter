@@ -26,15 +26,18 @@ Es dürfen keine Passwörter, Token, privaten Mail-Exporte, internen Produktivad
 
 ## Version aktualisieren
 
-Vor dem Tag müssen dieselbe Versionsnummer tragen:
+Vor dem Tag müssen die Versionsnummern der tatsächlich geänderten Oberfläche
+zusammenpassen:
 
-- `classic/org_zimbracommunity_phishing_reporter_classic.xml`
-- `modern/org_zimbracommunity_phishing_reporter_modern.xml`
-- `classic/config_template.xml`
-- `modern/config_template.xml`
-- alle XML-Dateien unter `config-examples/`
-- Versionskommentare in den beiden JavaScript-Dateien
+- der Descriptor und `config_template.xml` der geänderten Oberfläche
+- ihre XML-Dateien unter `config-examples/`
+- ihr Versionskommentar im JavaScript
+- `expectedClassicVersion` beziehungsweise `expectedModernVersion` im Smoke-Test
 - `CHANGELOG.md`
+
+Bei einem ausschließlich Modern oder Classic betreffenden Patch behält das
+unveränderte Paket seine bisherige interne Versionsnummer und Binärdatei. In
+den Release Notes muss dies ausdrücklich genannt werden.
 
 ## Release erzeugen
 

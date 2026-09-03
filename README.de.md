@@ -147,6 +147,11 @@ Technische Fehlerdetails werden standardmäßig nicht im Dialog angezeigt. Mit `
 | `simulationDkimDomains` | Kommagetrennte DKIM-Domains. |
 | `simulationSourceIndicators` | Kommagetrennte Merkmale aus `Received`; nur gemeinsam mit passender DKIM-Signatur wirksam. |
 | `classificationTimeoutMs` | Maximale Gesamtdauer der Klassifizierung, standardmäßig 12.000 ms. |
+| `sendTimeoutMs` | Maximale Wartezeit auf Zimbras `SendMsg`, standardmäßig 20.000 ms. |
+| `moveTimeoutMs` | Maximale Wartezeit auf das Verschieben, standardmäßig 15.000 ms. |
+| `refreshTimeoutMs` | Maximale Wartezeit auf die Listenaktualisierung, standardmäßig 10.000 ms. |
+| `operationTimeoutMs` | Harte Obergrenze für einen vollständigen Meldevorgang, standardmäßig 70.000 ms. |
+| `reportedMessageCooldownMs` | Zeitlich begrenzter Doppelklickschutz je Zimbra-Nachrichten-ID, standardmäßig 120.000 ms. |
 | `debugLogging` | Optionale technische Browserkonsolen-Ausgaben. |
 
 Die vollständige Beschreibung steht in `docs/CONFIGURATION.de.md`.

@@ -32,6 +32,11 @@ The original message is moved only after Zimbra accepts the report message. A fa
 | `simulationDkimDomains` | Comma-separated DKIM domains. |
 | `simulationSourceIndicators` | Comma-separated indicators from `Received`. This route is valid only together with a matching `DKIM-Signature`. |
 | `classificationTimeoutMs` | Maximum total classification duration in milliseconds. Default: `12000`; the implementation clamps values to 1,000–60,000. |
+| `sendTimeoutMs` | Maximum wait for `SendMsg`. Default: `20000`. Busy is released afterwards; the cooldown remains because delivery status is uncertain. |
+| `moveTimeoutMs` | Maximum wait for moving the message. Default: `15000`. Reporting has already succeeded at this stage. |
+| `refreshTimeoutMs` | Maximum wait for refreshing the message list. Default: `10000`. |
+| `operationTimeoutMs` | Hard limit for the complete Modern reporting operation. Default: `70000`. |
+| `reportedMessageCooldownMs` | Time-limited duplicate-click guard per Zimbra message ID. Default: `120000`. |
 
 The Zimlet does not modify messages or add headers. It only evaluates headers already present on the message.
 
@@ -80,13 +85,16 @@ Button labels, subject prefixes, success and error messages are configurable.
 |---|---|
 | `busyMessage` | A report is already being processed. |
 | `selectOneMessageMessage` | No unambiguous individual message is available. |
-| `alreadyReportedMessage` | The message has already been reported in the current browser session. |
+| `alreadyReportedMessage` | The message was reported recently and remains under the time-limited duplicate-click guard. |
 | `sendErrorMessage` | Report submission failed. |
+| `sendTimeoutMessage` | Send confirmation timed out; the report might already have been sent. |
 | `moveErrorMessage` | Report submitted but moving failed. |
+| `moveTimeoutMessage` | Report submitted, but moving was not confirmed in time. |
+| `operationTimeoutMessage` | The complete operation reached its hard deadline and was released for further interaction. |
 | `configurationErrorInvalidAddress` | Configured recipient is invalid. |
 | `errorReferenceLabel` | Label displayed before the support reference. |
 
-Users do not receive raw SOAP, server or JavaScript error details. Relevant references include `PR-SEND-01` and `PR-MOVE-01`.
+Users do not receive raw SOAP, server or JavaScript error details. Relevant references include `PR-SEND-01`, `PR-SEND-TIMEOUT`, `PR-MOVE-01`, `PR-MOVE-TIMEOUT` and `PR-TIMEOUT-01`.
 
 ## Debug logging
 

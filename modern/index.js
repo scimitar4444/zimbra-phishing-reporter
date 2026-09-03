@@ -1,4 +1,4 @@
-/* Zimbra Phishing Reporter - Modern UI - Version 2.1.1 */
+/* Zimbra Phishing Reporter - Modern UI - Version 2.1.2 */
 (function () {
     "use strict";
 
@@ -13,6 +13,7 @@
         var ZIMLET_NAME = "org_zimbracommunity_phishing_reporter_modern";
         var DEFAULT_TARGET_FOLDER_ID = "4";
         var busy = false;
+        var busySince = 0;
         var reportedMessageIds = {};
 
         function notify(message) {
@@ -193,6 +194,74 @@
                 value = maximum;
             }
             return value;
+        }
+
+        function nowMs() {
+            return new Date().getTime();
+        }
+
+        function withOperationTimeout(promise, timeoutMs, phase) {
+            return new Promise(function (resolve, reject) {
+                var settled = false;
+                var timer = window.setTimeout(function () {
+                    var timeoutError;
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    timeoutError = new Error("Reporter operation timed out: " + phase);
+                    timeoutError.reporterTimeoutPhase = phase;
+                    reject(timeoutError);
+                }, timeoutMs);
+
+                Promise.resolve(promise).then(function (value) {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    window.clearTimeout(timer);
+                    resolve(value);
+                }, function (error) {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    window.clearTimeout(timer);
+                    reject(error);
+                });
+            });
+        }
+
+        function reportCooldownMs() {
+            return readIntegerConfig("reportedMessageCooldownMs", 120000, 100, 3600000);
+        }
+
+        function pruneReportedMessageIds(timestamp) {
+            var cutoff = timestamp - reportCooldownMs();
+            Object.keys(reportedMessageIds).forEach(function (messageId) {
+                if (typeof reportedMessageIds[messageId] !== "number" ||
+                        reportedMessageIds[messageId] <= cutoff) {
+                    delete reportedMessageIds[messageId];
+                }
+            });
+        }
+
+        function setBusy(value) {
+            busy = !!value;
+            busySince = busy ? nowMs() : 0;
+        }
+
+        function isBusy() {
+            var maximumBusyMs;
+            if (!busy) {
+                return false;
+            }
+            maximumBusyMs = readIntegerConfig("operationTimeoutMs", 70000, 1000, 300000) + 5000;
+            if (!busySince || nowMs() - busySince > maximumBusyMs) {
+                setBusy(false);
+                return false;
+            }
+            return true;
         }
 
         function splitList(value, separator) {
@@ -696,19 +765,26 @@
         }
 
         function sendReport(messageId, originalSubject, route) {
-            return context.zimbraBatchClient.jsonRequest({
-                name: "SendMsg",
-                namespace: "urn:zimbraMail",
-                body: {
-                    noSave: 1,
-                    m: {
-                        e: [{ t: "t", a: route.recipient }],
-                        su: route.subjectPrefix + originalSubject,
-                        attach: { m: [{ id: String(messageId) }] }
-                    }
-                },
-                singleRequest: true
+            var request = Promise.resolve().then(function () {
+                return context.zimbraBatchClient.jsonRequest({
+                    name: "SendMsg",
+                    namespace: "urn:zimbraMail",
+                    body: {
+                        noSave: 1,
+                        m: {
+                            e: [{ t: "t", a: route.recipient }],
+                            su: route.subjectPrefix + originalSubject,
+                            attach: { m: [{ id: String(messageId) }] }
+                        }
+                    },
+                    singleRequest: true
+                });
             });
+            return withOperationTimeout(
+                request,
+                readIntegerConfig("sendTimeoutMs", 20000, 100, 120000),
+                "send"
+            );
         }
 
         function uniqueIds(values) {
@@ -724,30 +800,37 @@
         }
 
         function moveToTarget(props, messageId, listItemId, targetFolderId) {
-            if (props && typeof props.action === "function") {
-                return props.action({
-                    ids: [String(messageId)],
-                    op: "move",
-                    folderId: targetFolderId,
-                    removeFromList: true,
-                    idsToRemove: uniqueIds([listItemId, messageId]),
-                    type: "MsgAction",
-                    view: "MsgAction"
-                });
-            }
-
-            return context.zimbraBatchClient.jsonRequest({
-                name: "MsgAction",
-                namespace: "urn:zimbraMail",
-                body: {
-                    action: {
-                        id: String(messageId),
+            var request = Promise.resolve().then(function () {
+                if (props && typeof props.action === "function") {
+                    return props.action({
+                        ids: [String(messageId)],
                         op: "move",
-                        l: targetFolderId
-                    }
-                },
-                singleRequest: true
+                        folderId: targetFolderId,
+                        removeFromList: true,
+                        idsToRemove: uniqueIds([listItemId, messageId]),
+                        type: "MsgAction",
+                        view: "MsgAction"
+                    });
+                }
+
+                return context.zimbraBatchClient.jsonRequest({
+                    name: "MsgAction",
+                    namespace: "urn:zimbraMail",
+                    body: {
+                        action: {
+                            id: String(messageId),
+                            op: "move",
+                            l: targetFolderId
+                        }
+                    },
+                    singleRequest: true
+                });
             });
+            return withOperationTimeout(
+                request,
+                readIntegerConfig("moveTimeoutMs", 15000, 100, 120000),
+                "move"
+            );
         }
 
         function refreshMessageList() {
@@ -762,7 +845,7 @@
                 return Promise.resolve();
             }
 
-            return Promise.resolve().then(function () {
+            var refresh = Promise.resolve().then(function () {
                 if (typeof client.refetchQueries === "function") {
                     return client.refetchQueries({ include: "active" });
                 }
@@ -773,6 +856,14 @@
                 }
                 return null;
             }).catch(function () {
+                return null;
+            });
+            return withOperationTimeout(
+                refresh,
+                readIntegerConfig("refreshTimeoutMs", 10000, 100, 60000),
+                "refresh"
+            ).catch(function (refreshError) {
+                logError("PR-REFRESH-01", refreshError);
                 return null;
             });
         }
@@ -809,7 +900,7 @@
         }
 
         function reportMessage(props) {
-            if (busy) {
+            if (isBusy()) {
                 notify(readConfig("busyMessage", "The previous report is still being processed."));
                 return;
             }
@@ -825,8 +916,9 @@
             }
 
             messageId = String(messageId);
+            pruneReportedMessageIds(nowMs());
             if (reportedMessageIds[messageId]) {
-                notify(readConfig("alreadyReportedMessage", "This email has already been reported in this session."));
+                notify(readConfig("alreadyReportedMessage", "This email was reported recently. Please wait before trying again."));
                 return;
             }
 
@@ -837,7 +929,8 @@
             var alreadyInTarget = String(message.folderId || message.l || "") === targetFolderId;
             var listItemId = props && props.emailData && props.emailData.id;
 
-            busy = true;
+            reportedMessageIds[messageId] = nowMs();
+            setBusy(true);
             var classification = readBooleanConfig("simulationDetectionEnabled", false) ?
                 loadClassificationHeaders(messageId)
                     .then(function (headerMap) {
@@ -863,7 +956,7 @@
 
                     return sendReport(messageId, originalSubject, route)
                         .then(function () {
-                            reportedMessageIds[messageId] = true;
+                            reportedMessageIds[messageId] = nowMs();
                             if (!shouldMove || alreadyInTarget) {
                                 finishFeedback(route);
                                 return null;
@@ -872,6 +965,15 @@
                                 .then(function () { return refreshMessageList(); })
                                 .then(function () { finishFeedback(route); })
                                 .catch(function (moveError) {
+                                    if (moveError && moveError.reporterTimeoutPhase === "move") {
+                                        logError("PR-MOVE-TIMEOUT", moveError);
+                                        showDialog(formatErrorMessage(
+                                            "moveTimeoutMessage",
+                                            "The report was sent, but moving the email took too long. You can move it manually.",
+                                            "PR-MOVE-TIMEOUT"
+                                        ));
+                                        return;
+                                    }
                                     logError("PR-MOVE-01", moveError);
                                     showDialog(formatErrorMessage(
                                         "moveErrorMessage",
@@ -883,9 +985,21 @@
                 })
                 .catch(function (sendError) {
                     if (sendError && sendError.reporterConfigurationError) {
+                        delete reportedMessageIds[messageId];
                         showDialog(sendError.message);
                         return;
                     }
+                    if (sendError && sendError.reporterTimeoutPhase === "send") {
+                        reportedMessageIds[messageId] = nowMs();
+                        logError("PR-SEND-TIMEOUT", sendError);
+                        showDialog(formatErrorMessage(
+                            "sendTimeoutMessage",
+                            "The server response took too long. The report may still have been sent. Please wait before trying again.",
+                            "PR-SEND-TIMEOUT"
+                        ));
+                        return;
+                    }
+                    delete reportedMessageIds[messageId];
                     logError("PR-SEND-01", sendError);
                     showDialog(formatErrorMessage(
                         "sendErrorMessage",
@@ -894,10 +1008,26 @@
                     ));
                 });
 
+            operation = withOperationTimeout(
+                operation,
+                readIntegerConfig("operationTimeoutMs", 70000, 1000, 300000),
+                "overall"
+            );
+
             operation.then(function () {
-                busy = false;
+                setBusy(false);
             }, function (unexpectedError) {
-                busy = false;
+                setBusy(false);
+                reportedMessageIds[messageId] = nowMs();
+                if (unexpectedError && unexpectedError.reporterTimeoutPhase === "overall") {
+                    logError("PR-TIMEOUT-01", unexpectedError);
+                    showDialog(formatErrorMessage(
+                        "operationTimeoutMessage",
+                        "Reporting took too long. The operation was released; the report may still have been sent. Please wait before trying again.",
+                        "PR-TIMEOUT-01"
+                    ));
+                    return;
+                }
                 logError("PR-UNEXPECTED-01", unexpectedError);
                 showDialog(formatErrorMessage(
                     "sendErrorMessage",

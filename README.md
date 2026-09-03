@@ -143,6 +143,11 @@ Technical server details are not displayed in user dialogs. Administrators may e
 | `simulationDkimDomains` | Comma-separated DKIM domains. |
 | `simulationSourceIndicators` | Comma-separated `Received` indicators; effective only with a matching DKIM signature. |
 | `classificationTimeoutMs` | Maximum total classification duration, 12,000 ms by default. |
+| `sendTimeoutMs` | Maximum wait for Zimbra `SendMsg`, 20,000 ms by default. |
+| `moveTimeoutMs` | Maximum wait for the move operation, 15,000 ms by default. |
+| `refreshTimeoutMs` | Maximum wait for list refresh, 10,000 ms by default. |
+| `operationTimeoutMs` | Hard limit for one complete reporting operation, 70,000 ms by default. |
+| `reportedMessageCooldownMs` | Time-limited duplicate-click guard per Zimbra message ID, 120,000 ms by default. |
 | `debugLogging` | Optional technical browser-console output. |
 
 See `docs/CONFIGURATION.md` for the complete reference.

@@ -275,7 +275,7 @@ async function modernTests() {
   await delay();
   assert.strictEqual(single.calls.filter(call => call.name === "SendMsg").length, 1,
     "a stale Modern message entry must not cause a duplicate report in the same session");
-  assert(single.notifications.some(message => /already/i.test(message)));
+  assert(single.notifications.some(message => /reported recently/i.test(message)));
 
   const dkimConfig = {
     ...baseConfig,

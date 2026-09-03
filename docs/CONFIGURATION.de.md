@@ -32,6 +32,11 @@ Die Originalnachricht wird erst verschoben, nachdem Zimbra die Meldemail angenom
 | `simulationDkimDomains` | Kommagetrennte DKIM-Domains. |
 | `simulationSourceIndicators` | Kommagetrennte Merkmale aus `Received`. Diese Route gilt nur zusammen mit einer passenden `DKIM-Signature`. |
 | `classificationTimeoutMs` | Maximale Gesamtdauer der Klassifizierung in Millisekunden. Standard: `12000`; zulässiger Bereich im Code: 1.000 bis 60.000. |
+| `sendTimeoutMs` | Maximale Wartezeit auf `SendMsg`. Standard: `20000`. Danach wird der Busy-Zustand aufgehoben; wegen unklarem Versandstatus bleibt der zeitliche Doppelklickschutz aktiv. |
+| `moveTimeoutMs` | Maximale Wartezeit auf das Verschieben. Standard: `15000`. Ein Versand gilt zu diesem Zeitpunkt bereits als erfolgreich. |
+| `refreshTimeoutMs` | Maximale Wartezeit auf die Aktualisierung der Nachrichtenliste. Standard: `10000`. |
+| `operationTimeoutMs` | Harte Obergrenze für den vollständigen Modern-Meldevorgang. Standard: `70000`. |
+| `reportedMessageCooldownMs` | Zeitlich begrenzter Doppelklickschutz je Zimbra-Nachrichten-ID. Standard: `120000`. |
 
 Das Zimlet verändert keine Mail und setzt keine Header. Es wertet ausschließlich Header aus, die bereits in der Nachricht vorhanden sind.
 
@@ -82,13 +87,16 @@ Buttonbeschriftung, Betreffpräfixe, Erfolgs- und Fehlermeldungen sind konfiguri
 |---|---|
 | `busyMessage` | Eine Meldung wird bereits verarbeitet. |
 | `selectOneMessageMessage` | Keine eindeutig bestimmte Einzelmail verfügbar. |
-| `alreadyReportedMessage` | Die Nachricht wurde in derselben Browsersitzung bereits gemeldet. |
+| `alreadyReportedMessage` | Die Nachricht wurde vor Kurzem gemeldet und ist noch durch den zeitlich begrenzten Doppelklickschutz gesperrt. |
 | `sendErrorMessage` | Versand der Meldung fehlgeschlagen. |
+| `sendTimeoutMessage` | Die Sendebestätigung ist abgelaufen; ein bereits erfolgter Versand ist möglich. |
 | `moveErrorMessage` | Meldung versendet, Verschieben fehlgeschlagen. |
+| `moveTimeoutMessage` | Meldung versendet, aber Verschieben nicht rechtzeitig bestätigt. |
+| `operationTimeoutMessage` | Der gesamte Meldevorgang hat seine harte Zeitgrenze erreicht und wurde für weitere Bedienung freigegeben. |
 | `configurationErrorInvalidAddress` | Konfigurierte Empfängeradresse ist ungültig. |
 | `errorReferenceLabel` | Bezeichnung vor dem technischen Referenzcode. |
 
-Endnutzer sehen keine ungefilterten SOAP-, Server- oder JavaScript-Fehlerdetails. Relevante Referenzen sind unter anderem `PR-SEND-01` und `PR-MOVE-01`.
+Endnutzer sehen keine ungefilterten SOAP-, Server- oder JavaScript-Fehlerdetails. Relevante Referenzen sind unter anderem `PR-SEND-01`, `PR-SEND-TIMEOUT`, `PR-MOVE-01`, `PR-MOVE-TIMEOUT` und `PR-TIMEOUT-01`.
 
 ## Debug-Logging
 

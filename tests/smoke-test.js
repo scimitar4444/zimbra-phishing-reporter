@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, "..");
 const classicId = "org_zimbracommunity_phishing_reporter_classic";
 const modernId = "org_zimbracommunity_phishing_reporter_modern";
 const expectedClassicVersion = "2.1.1";
-const expectedModernVersion = "2.1.1";
+const expectedModernVersion = "2.1.2";
 
 function run(command, args) {
   childProcess.execFileSync(command, args, { stdio: "inherit", cwd: root });
@@ -18,6 +18,7 @@ function run(command, args) {
 run("bash", ["scripts/build.sh"]);
 run("node", ["--check", path.join("classic", classicId + ".js")]);
 run("node", ["--check", path.join("modern", "index.js")]);
+run("node", [path.join("tests", "modern-timeout-test.js")]);
 
 const forbiddenInRuntime = [
   "reportto@hornetsecurity.com",

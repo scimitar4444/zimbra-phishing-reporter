@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.2] - 2026-09-03
+
+- bound Modern `SendMsg`, move, refresh and complete report operations with configurable timeouts
+- always release the Modern busy state, including stalled client promises
+- replace the browser-session message lock with a short configurable cooldown
+- keep an uncertainty cooldown after send timeouts to avoid accidental duplicate reports
+- add clear timeout messages and stable support references
+- no functional change to the Classic reporting flow
+
 ## [2.1.1] - 2026-09-02
 
 - fix Modern runtime configuration lookup when Zimbra returns a same-name descriptor before the configured Zimlet object
