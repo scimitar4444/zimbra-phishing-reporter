@@ -1,0 +1,63 @@
+name: Publish Zimbra Phishing Reporter 2.2.0
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.event.head_commit.message == '[publish-v2.2.0] Publish Zimbra Phishing Reporter 2.2.0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release source
+        env:
+          RELEASE_COMMIT: 5846ef0bad919403a9d37ffc6c2b10a8c5769a43
+        run: |
+          test "$(git rev-parse HEAD^)" = "$RELEASE_COMMIT"
+          test ! -e .git/refs/tags/v2.2.0
+          node --check classic/org_zimbracommunity_phishing_reporter_classic.js
+          node --check modern/index.js
+          node tests/detection-test.js
+          node tests/smoke-test.js
+          (cd dist && sha256sum -c SHA256SUMS)
+          unzip -p dist/org_zimbracommunity_phishing_reporter_classic.zip org_zimbracommunity_phishing_reporter_classic.js > /tmp/classic.js
+          unzip -p dist/org_zimbracommunity_phishing_reporter_modern.zip index.js > /tmp/modern.js
+          cmp classic/org_zimbracommunity_phishing_reporter_classic.js /tmp/classic.js
+          cmp modern/index.js /tmp/modern.js
+          grep -F 'version="2.2.0"' classic/org_zimbracommunity_phishing_reporter_classic.xml
+          grep -F 'version="2.2.0"' modern/org_zimbracommunity_phishing_reporter_modern.xml
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT: 5846ef0bad919403a9d37ffc6c2b10a8c5769a43
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a v2.2.0 "$RELEASE_COMMIT" -m "Zimbra Phishing Reporter 2.2.0"
+          git push origin refs/tags/v2.2.0
+          cat > /tmp/release-notes.md <<'NOTES'
+          ## Zimbra Phishing Reporter 2.2.0
+
+          This feature release adds safe multi-message reporting to both Zimbra Classic and Modern.
+
+          - Confirmed batches of up to 10 individually selected messages
+          - Each message is classified, reported and optionally moved separately and sequentially
+          - Internal reports and recognized simulations retain their separate routes
+          - Processing continues after an individual send or move failure
+          - Progress notifications and a final reported/failed/not-moved/skipped summary
+          - Ambiguous conversations and oversized batches are rejected before sending
+          - Classic now also has send/move timeouts and a time-limited duplicate guard
+          - No reporting addresses or organization-specific production data are included
+
+          Verify downloads with the attached `SHA256SUMS`.
+          NOTES
+          gh release create v2.2.0             dist/org_zimbracommunity_phishing_reporter_classic.zip             dist/org_zimbracommunity_phishing_reporter_modern.zip             dist/SHA256SUMS             --title "Zimbra Phishing Reporter 2.2.0"             --notes-file /tmp/release-notes.md
